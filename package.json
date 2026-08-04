@@ -28,15 +28,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.62.0",
+    "@playwright/test": "^1.62.1",
     "@testcontainers/postgresql": "^12.0.4",
     "@testcontainers/redis": "^12.0.4",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "eslint": "^10.4.0",
     "globals": "^17.8.0",
     "quicktype": "23.3.6",
     "testcontainers": "^12.0.4",
-    "turbo": "^2.10.7",
+    "turbo": "^2.10.8",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"

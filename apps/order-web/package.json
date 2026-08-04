@@ -12,9 +12,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@sentry/nextjs": "^10.68.0",
+    "@sentry/nextjs": "^10.69.0",
     "@rop/contracts": "workspace:*",
-    "framer-motion": "^12.42.2",
+    "framer-motion": "^12.43.0",
     "next": "16.2.12",
     "react": "19.2.7",
     "react-dom": "19.2.7",

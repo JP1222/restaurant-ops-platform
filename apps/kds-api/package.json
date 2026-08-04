@@ -21,7 +21,7 @@
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",
     "@fastify/websocket": "^11.3.0",
-    "@sentry/node": "^10.68.0",
+    "@sentry/node": "^10.69.0",
     "@simplewebauthn/server": "^13.3.2",
     "@rop/auth": "workspace:*",
     "@rop/contracts": "workspace:*",
@@ -36,7 +36,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@types/ws": "^8.18.1",
     "pino-pretty": "^13.1.2",
     "tsx": "^4.23.1"
