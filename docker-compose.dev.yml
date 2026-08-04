@@ -1,0 +1,143 @@
+# Local development backing services for `make dev-up` / `make dev`.
+#
+# The six apps (kds-api, kds-web, inventory-api, analytics-api, backoffice-web,
+# notifications-api) run on the host; only the five Postgres databases + Redis
+# live in Docker so dev state survives restarts. Each app owns its own database
+# (Iron Law 1): kds + auth share `postgres` (:5432), inventory has
+# `postgres-inventory` (:5433), analytics has `postgres-analytics` (:5434),
+# notifications has `postgres-notifications` (:5435), crm has `postgres-crm`
+# (:5436). crm-api is startable on demand (NOT in the default `make dev` stack,
+# like crew-web / order-web) but its DB is provisioned + migrated here so a
+# `pnpm --filter @rop/crm-api dev` just works.
+#
+# Ports bind to 127.0.0.1 only so dev DBs are not exposed on LAN.
+#
+# Production runs each app as a plain docker compose stack via `compose/*.yml`. Do not point any
+# prod tooling at this file.
+
+name: rop-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_kds
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_kds"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # inventory-api owns its own database (Iron Law 1), so it runs in a separate
+  # Postgres instance on 5433 rather than sharing the KDS one above.
+  postgres-inventory:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_inventory
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: postgres
+    volumes:
+      - postgres-inventory-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_inventory"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # analytics-api owns its own database too (Iron Law 1 / Iron Law 5). It runs
+  # its raw-SQL migrations on boot but never CREATE DATABASEs, so this service's
+  # POSTGRES_DB provides the database it expects (closes the historical gap where
+  # no compose file ever created it).
+  postgres-analytics:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_analytics
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: postgres
+    volumes:
+      - postgres-analytics-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_analytics"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # notifications-api owns its own database too (Iron Law 1; ADR-0801). It is
+  # internal-only in production (compose/notifications.yml binds no host port — only
+  # the backoffice BFF reaches it over the app network), but in dev we publish 5435
+  # so the host-run app + the host-run `prisma migrate deploy` (scripts/dev-up.sh)
+  # can connect. This service's POSTGRES_DB creates the database the migrations expect.
+  postgres-notifications:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_notifications
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: postgres
+    volumes:
+      - postgres-notifications-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_notifications"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # crm-api owns its own database too (Iron Law 1 — loyalty/CRM, ADR-0021). Unlike
+  # the services above, crm-api is NOT in the default `make dev` stack (start it on
+  # demand: `pnpm --filter @rop/crm-api dev`), but its DB lives here so the
+  # host-run app + the host-run `prisma migrate deploy` (scripts/dev-up.sh) can
+  # connect. Port 5436 — 5435 is reserved for notifications-api (ADR-0801). This
+  # service's POSTGRES_DB creates the database the migrations expect.
+  postgres-crm:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_crm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: postgres
+    volumes:
+      - postgres-crm-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
+  postgres-inventory-data:
+  postgres-analytics-data:
+  postgres-notifications-data:
+  postgres-crm-data:
+  redis-data:

@@ -1,0 +1,35 @@
+# Alert rules for the analytics-api Clover ingest path.
+#
+# Loaded via `rule_files: /etc/prometheus/rules/*.yml` in prometheus.yml (the
+# glob picks this file up automatically) and mounted read-only into the
+# prom/prometheus container. Edit then POST http://prometheus:9090/-/reload from
+# inside the observability network or `docker compose restart prometheus`.
+#
+# Same no-Alertmanager model as backfill.rules.yml — alerts surface in
+# Prometheus /alerts and the ALERTS{...} series in Grafana.
+groups:
+  - name: analytics-clover-sync
+    rules:
+      # GH #469: the v1 /refunds pull is swallowed to [] on failure so the
+      # dimension sweep can still proceed — but a swallowed failure undercounts
+      # refunds (overstating net sales) and the internal raw-vs-mart recon can't
+      # catch it (both sides equally empty → delta 0 → PASS). A SINGLE failure
+      # self-heals: the next sweep re-pulls the full /refunds list and upserts.
+      # So we only page on a SUSTAINED failure — >=3 failed pulls in the trailing
+      # hour, held for 30m — which means the refund pull is persistently broken
+      # (bad token, Clover v1 outage, network) rather than a transient blip.
+      - alert: CloverV1RefundFetchFailing
+        expr: increase(rop_clover_v1_refund_fetch_failures_total[1h]) >= 3
+        for: 30m
+        labels:
+          severity: warning
+          service: analytics-api
+          component: clover-ingest
+        annotations:
+          summary: "Clover v1 refund pull failing for merchant {{ $labels.merchant_id }}"
+          description: >-
+            {{ $value }} Clover v1 /refunds pulls have failed in the last hour for
+            merchant {{ $labels.merchant_id }}. Failed pulls are swallowed to an
+            empty result, so refunds are being undercounted (net sales overstated)
+            and the raw-vs-mart reconciliation will not flag it. Check the Clover
+            token validity and v1 API reachability from analytics-api.

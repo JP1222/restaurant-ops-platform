@@ -1,0 +1,50 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalDependencies": [
+    "tsconfig.base.json",
+    "eslint.config.mjs",
+    "eslint.boundaries.mjs",
+    "pnpm-lock.yaml"
+  ],
+  "globalPassThroughEnv": [
+    "NODE_ENV",
+    "DATABASE_URL", "INVENTORY_DATABASE_URL", "ANALYTICS_DATABASE_URL", "REDIS_URL",
+    "APP_BASE_URL", "BACKOFFICE_BASE_URL", "INTERNAL_API_BASE_URL", "INTERNAL_KDS_API_URL",
+    "INTERNAL_INVENTORY_API_URL", "INTERNAL_ANALYTICS_API_URL",
+    "SESSION_SECRET", "KDS_INTERNAL_ADMIN_TOKEN", "INVENTORY_INTERNAL_TOKEN",
+    "ADMIN_TOKEN", "ANALYTICS_ADMIN_TOKEN",
+    "AI_TOKEN_ENCRYPTION_KEY", "APP_SETTING_ENCRYPTION_KEY",
+    "CREW_SESSION_SECRET", "CREW_PIN_PEPPER",
+    "WEBAUTHN_RP_ID", "WEBAUTHN_ORIGIN", "BACKOFFICE_SESSION_COOKIE_NAME",
+    "DEV_ADMIN_USERNAME", "DEV_ADMIN_DISPLAY_NAME"
+  ],
+  "tasks": {
+    "generate": {
+      "inputs": ["prisma/**", "package.json"],
+      "outputs": ["prisma/generated/**", "generated/**"]
+    },
+    "build": {
+      "dependsOn": ["^build", "generate"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "lint": {
+      "dependsOn": ["^build", "generate"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "generate"]
+    },
+    "test": {
+      "dependsOn": ["^build", "generate"]
+    },
+    "test:integration": {
+      "dependsOn": ["^build", "generate"],
+      "cache": false,
+      "passThroughEnv": ["TESTCONTAINERS_*", "DOCKER_HOST", "NODE_OPTIONS"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

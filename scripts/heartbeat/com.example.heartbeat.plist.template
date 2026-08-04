@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.heartbeat</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>__SCRIPT_PATH__</string>
+    </array>
+    <!-- Fire every 60s. macOS's launchd runs the job, captures stdout+stderr,
+         and re-fires after StartInterval seconds from the start of the
+         previous invocation. If a run is still going when the next tick
+         arrives, launchd skips the next firing (no overlapping runs). -->
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Pull in the user PATH so `ssh` and `curl` resolve. The 1Password
+             ssh-agent socket is normally exported by the user's shell rc; if
+             the launchd context lacks it, ssh falls back to the IdentityFile
+             configured in ~/.ssh/config for Host Oracle (oracle_vps.key). -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <!-- Throttling: don't fire more often than every 10s even if StartInterval
+         requests it. Belt-and-suspenders against config typos. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

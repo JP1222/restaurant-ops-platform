@@ -1,0 +1,31 @@
+name: rop-legal
+
+services:
+  legal-site:
+    image: ghcr.io/example-org/rop-legal-site:main
+    pull_policy: always
+    restart: unless-stopped
+    healthcheck:
+      # Static-site container — `nginx -g 'daemon off;'` is ready in <1s.
+      # curl is baked into the runtime stage; aggressive interval is fine
+      # because the container has effectively zero work to do.
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - rop-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rop-net
+      - "traefik.http.routers.rop-legal.rule=Host(`legal.example.com`)"
+      - traefik.http.routers.rop-legal.entrypoints=websecure
+      - traefik.http.routers.rop-legal.tls=true
+      - traefik.http.routers.rop-legal.tls.certresolver=production
+      - traefik.http.routers.rop-legal.priority=100
+      - traefik.http.services.rop-legal.loadbalancer.server.port=80
+
+networks:
+  rop-net:
+    external: true

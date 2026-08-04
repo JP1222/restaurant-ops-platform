@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Example Kitchen">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#EC1E79"></stop>
+      <stop offset="100%" stop-color="#A6CE39"></stop>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#g)"></rect>
+  <circle cx="24" cy="26" r="9" fill="#fff" fill-opacity="0.96"></circle>
+  <circle cx="40" cy="40" r="9" fill="#fff" fill-opacity="0.96"></circle>
+</svg>

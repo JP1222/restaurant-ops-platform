@@ -1,0 +1,70 @@
+{
+  "name": "@rop/auth",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "yr-src": "./src/index.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "yr-src": "./src/server/index.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./crew": {
+      "types": "./dist/server/crew-pin.d.ts",
+      "yr-src": "./src/server/crew-pin.ts",
+      "import": "./dist/server/crew-pin.js"
+    },
+    "./rbac": {
+      "types": "./dist/rbac.d.ts",
+      "yr-src": "./src/rbac.ts",
+      "import": "./dist/rbac.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "yr-src": "./src/client/index.ts",
+      "import": "./dist/client/index.js"
+    },
+    "./next": {
+      "types": "./dist/next/index.d.ts",
+      "yr-src": "./src/next/index.ts",
+      "import": "./dist/next/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.2",
+    "@rop/contracts": "workspace:*",
+    "@rop/db-auth": "workspace:*"
+  },
+  "peerDependencies": {
+    "next": ">=15",
+    "react": ">=19"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "next": "^16.2.12",
+    "react": "^19.2.7",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}

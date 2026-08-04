@@ -1,0 +1,29 @@
+# Grafana auto-provisioned data sources. Mounted into
+# /etc/grafana/provisioning/datasources at startup so we don't have to
+# click through "Add data source" in the UI after every fresh install.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    # Stable uid so provisioned dashboards can reference this datasource
+    # deterministically on a fresh install (otherwise Grafana auto-generates a
+    # uid and the curated boards render "datasource not found").
+    uid: prometheus
+    access: proxy
+    # Resolved by Docker DNS within the observability network.
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "30s"
+      httpMethod: POST
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000

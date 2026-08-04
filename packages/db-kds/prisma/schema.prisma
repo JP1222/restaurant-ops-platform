@@ -1,0 +1,717 @@
+generator client {
+  provider      = "prisma-client-js"
+  // Generate into a package-local path (not the workspace-hoisted
+  // node_modules/@prisma/client) so that the parallel @rop/db-auth
+  // schema (see ADR-0015) does not clobber this client's generated types.
+  output        = "./generated/client"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-arm64-openssl-1.1.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MerchantAuthStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+  ERROR
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+  SKIPPED
+}
+
+enum KdsTicketStatus {
+  NEW
+  ON_HOLD
+  ACKNOWLEDGED
+  IN_PROGRESS
+  READY
+  COMPLETED
+}
+
+enum KdsAction {
+  ACKNOWLEDGE
+  HOLD
+  FIRE
+  START
+  READY
+  COMPLETE
+  BUMP
+  RECALL
+  SYNC
+}
+
+enum KdsEventSource {
+  SYSTEM
+  USER
+  WEBHOOK
+  RECONCILIATION
+}
+
+enum OrderProvider {
+  CLOVER
+  DELIVERECT
+  DEMO
+  SQUARE
+}
+
+enum IntegrationEnvironment {
+  STAGING
+  PRODUCTION
+}
+
+enum KdsDeviceRole {
+  KDS
+  // Customer-facing "order-ready" display (ADR-0818 Phase-2b device pairing).
+  // Distinct from KDS so a display device pairs to a store with its own
+  // (read-oriented) scope. Existing rows stay KDS.
+  DISPLAY
+}
+
+enum ProviderEventStatus {
+  RECEIVED
+  QUEUED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+model ProviderAppState {
+  id                           String                 @id @default(cuid())
+  provider                     OrderProvider
+  environment                  IntegrationEnvironment
+  latestWebhookVerificationCode String?
+  latestWebhookVerificationAt  DateTime?
+  lastSignedWebhookAt          DateTime?
+  tokenModeMerchantId          String?                @db.VarChar(32)
+  createdAt                    DateTime               @default(now())
+  updatedAt                    DateTime               @updatedAt
+
+  tenantId String? // ADR-0818: tenant scope kept NULLABLE + global (shared marketplace-app webhook bookkeeping) — gated in the auth layer, not RLS; intentionally NOT backfilled
+  @@unique([provider, environment])
+  @@map("provider_app_states")
+}
+
+// POS account = the provider credential, shared across the store(s) it owns
+// (unified PosAccount/PosStore model — see docs/square-onboarding.md and the
+// Square-onboarding ADR). The real OAuth/PAT token lives HERE, never duplicated
+// onto a per-store row. Clover: one account fanning out to exactly one store
+// (account == store, because Clover addresses data only by merchant_id). Square:
+// one token per merchant fanning out to N locations (orders scoped by
+// location_id). The per-store binding is `CloverMerchant` (the "PosStore" row),
+// which references this via posAccountId.
+model PosAccount {
+  id                    String                 @id @default(cuid())
+  provider              OrderProvider
+  providerMerchantId    String
+  environment           IntegrationEnvironment @default(PRODUCTION)
+  // OAuth secrets are AES-256-GCM encrypted at rest in the *Cipher columns
+  // (migration 20260617_pos_token_cipher), mirroring Deliverect's apiTokenCipher.
+  // The legacy plaintext columns were DROPPED in 20260618_drop_pos_token_plaintext
+  // after the prod backfill proved zero plaintext rows remained — reads are now
+  // cipher-only. Resolve via resolvePosAccountSecrets (apps/kds-api/src/lib/
+  // pos-token.ts) — never read these columns directly.
+  accessTokenCipher     Bytes?
+  refreshTokenCipher    Bytes?
+  tokenExpiresAt        DateTime?
+  refreshTokenExpiresAt DateTime?
+  authStatus            MerchantAuthStatus     @default(PENDING)
+  region                String                 @default("US")
+  stores                CloverMerchant[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@unique([provider, providerMerchantId, environment])
+  @@map("pos_accounts")
+}
+
+// Tenant = the top-level isolation unit (a restaurant business; Toast's
+// "Management Group"). Introduced by ADR-0818 (multi-tenant platform). The
+// owner's brand is tenant #1; the model supports N tenants. `tenant_id` is the
+// hard cross-tenant trust boundary across every DB (target: Postgres RLS + an
+// authenticated claim, never a client param); Location and the POS/KDS rows
+// scope WITHIN a tenant. Phase 1 (migration 20260619_tenant_entity) introduces
+// the entity + backfills the single implicit tenant — NOTHING reads tenant_id
+// yet (zero behavior change). See docs/architecture/multi-tenant-architecture.md
+// and docs/multi-tenant-migration-roadmap.md.
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  slug      String       @unique
+  status    TenantStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  locations Location[]
+
+  @@map("tenants")
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  OFFBOARDING
+  ARCHIVED
+}
+
+// POS-agnostic store registry (ADR-0018, multi-location). A Location is the
+// canonical store identity for backoffice, settings, and inventory; its POS
+// binding (CloverMerchant today, other POS later) points up to it. KDS and
+// analytics keep scoping operational rows by the Clover merchantId — see
+// ADR-0018 for the locationId-vs-merchantId split. A Location belongs to one
+// Tenant (ADR-0818) — the cross-tenant boundary above the store.
+model Location {
+  id              String           @id @default(cuid())
+  name            String
+  slug            String           @unique
+  timezone        String           @default("America/Chicago")
+  operatingHours  Json?
+  active          Boolean          @default(true)
+  // Phase 1 (ADR-0818): nullable now, backfilled to the default tenant; a later
+  // migration sets it NOT NULL once every reader/writer carries a tenant. The
+  // cross-tenant RLS predicate keys on this. onDelete Restrict — a tenant with
+  // locations cannot be hard-deleted (offboarding is status + crypto-shred).
+  tenantId        String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  cloverMerchants CloverMerchant[]
+  tenant          Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@map("locations")
+}
+
+// Store-account / merchant-identity table. Despite the name this is the GENERIC
+// per-store row, NOT Clover-only (ADR-0019): non-Clover sources (e.g. Deliverect)
+// upsert rows here with a synthetic id and keep their provider creds in
+// KdsProviderConfig. The accessToken/refreshToken columns are Clover's provider
+// credentials and are placeholder/null for non-Clover stores. Each Location
+// (ADR-0018) groups one or more of these. Rename to StoreAccount is deferred
+// until a non-Clover store actually lands (ADR-0019).
+model CloverMerchant {
+  id                String             @id @db.VarChar(32)
+  name              String?
+  // At most ONE bound merchant per Location, enforced by a PARTIAL UNIQUE index
+  // (`WHERE "locationId" IS NOT NULL`) in migration 20260616_clover_merchant_location_unique.
+  // Prisma's PSL can't express a partial index, so the constraint lives in raw
+  // SQL and is intentionally absent from this model's `@@index`/`@@unique` block.
+  // Unbound rows (locationId NULL) are unconstrained — many may await onboarding.
+  // resolveOrderStore (kds-api) also fails closed on >1 bound merchant.
+  locationId        String?
+  // Unified PosAccount/PosStore model (docs/square-onboarding.md): this row is
+  // the per-store binding ("PosStore"); its credential lives on the linked
+  // PosAccount. providerStoreId is the POS-side store id (for Clover it equals
+  // this row's id == the merchantId; for Square it is the location_id, while the
+  // row id is the synthetic `square:{location_id}`). posAccountId is null on
+  // legacy rows until backfilled; the legacy accessToken columns below stay
+  // populated (dual-read) until a later migration drops them, so the existing
+  // Clover path is undisturbed.
+  providerStoreId   String?
+  posAccountId      String?
+  employeeId        String?
+  // OAuth secrets (access / refresh / recovery) are AES-256-GCM encrypted at
+  // rest in the *Cipher columns (migration 20260617_pos_token_cipher). The
+  // legacy plaintext columns were DROPPED in 20260618_drop_pos_token_plaintext
+  // after the prod backfill proved zero plaintext rows remained — reads are now
+  // cipher-only. Resolve via resolveCloverMerchantSecrets (apps/kds-api/src/lib/
+  // pos-token.ts) — never read these columns directly. A webhook-only non-Clover
+  // row (e.g. Deliverect, ADR-0019) holds NO token at all (every *Cipher is null)
+  // and is discriminated by `region` + its KdsProviderConfig, not a token sentinel.
+  accessTokenCipher Bytes?
+  refreshTokenCipher Bytes?
+  tokenExpiresAt    DateTime?
+  refreshTokenExpiresAt DateTime?
+  recoveryTokenCipher Bytes?
+  authStatus        MerchantAuthStatus @default(PENDING)
+  region            String             @default("US")
+  appInstalledAt    DateTime?
+  lastWebhookAt     DateTime?
+  lastSyncAt        DateTime?
+  lastReconciledAt  DateTime?
+  resetCutoffAt     DateTime?
+  webhookStatus     String?
+  kdsPin            String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  orders            CloverOrder[]
+  tickets           KdsTicket[]
+  filter            KdsFilter?
+  providerConfigs   KdsProviderConfig[]
+  screenSessions    KdsScreenSession[]
+  webhookEvents     CloverWebhookEvent[]
+  providerEvents    KdsProviderEvent[]
+  realtimeEvents    KdsRealtimeEvent[]
+  realtimeReceipts  KdsRealtimeReceipt[]
+  realtimeState     KdsRealtimeState?
+  deadLetterJobs    DeadLetterJob[]
+  deviceTokens      KdsDeviceToken[]
+  location          Location?          @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  posAccount        PosAccount?        @relation(fields: [posAccountId], references: [id], onDelete: SetNull)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([posAccountId])
+  @@map("clover_merchants")
+}
+
+model KdsDeviceToken {
+  id         String        @id @default(cuid())
+  merchantId String
+  label      String
+  role       KdsDeviceRole @default(KDS)
+  tokenHash  String        @unique
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  merchant   CloverMerchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([merchantId, revokedAt])
+  @@map("kds_device_tokens")
+}
+
+model CloverOrder {
+  id            String     @id
+  merchantId    String
+  provider      OrderProvider @default(CLOVER)
+  raw           Json
+  normalized    Json?
+  clientCreatedAt DateTime?
+  modifiedAt    DateTime?
+  orderState    String?
+  orderType     String?
+  source        String?
+  paymentState  String?
+  total         Int?
+  currency      String?
+  syncStatus    SyncStatus @default(PENDING)
+  lastEventId   String?
+  lastEventAt   DateTime?
+  lastSyncedAt  DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  merchant      CloverMerchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  ticket        KdsTicket?
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([merchantId, modifiedAt])
+  @@index([merchantId, createdAt])
+  @@index([merchantId, provider, createdAt])
+  @@map("clover_orders")
+}
+
+model KdsTicket {
+  id             String          @id @default(cuid())
+  merchantId     String
+  cloverOrderId  String          @unique
+  provider       OrderProvider   @default(CLOVER)
+  sourceOrderId  String
+  orderLabel     String?
+  status         KdsTicketStatus @default(NEW)
+  priority       Int             @default(0)
+  lastActor      String?
+  lastAction     KdsAction?
+  searchText     String?
+  note           String?
+  source         String?
+  orderType      String?
+  paymentState   String?
+  heldAt         DateTime?
+  holdUntil      DateTime?
+  acknowledgedAt DateTime?
+  inProgressAt   DateTime?
+  readyAt        DateTime?
+  completedAt    DateTime?
+  bumpedAt       DateTime?
+  recalledAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  merchant       CloverMerchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  order          CloverOrder     @relation(fields: [cloverOrderId], references: [id], onDelete: Cascade)
+  items          KdsTicketItem[]
+  events         KdsTicketEvent[]
+  localEdit      KdsTicketOverride?
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([merchantId, status, updatedAt])
+  @@index([merchantId, holdUntil])
+  @@unique([merchantId, provider, sourceOrderId])
+  @@map("kds_tickets")
+}
+
+model KdsTicketOverride {
+  id                   String    @id @default(cuid())
+  ticketId             String    @unique
+  merchantId           String
+  orderLabel           String
+  channelLabel         String?
+  fulfillmentTimeLabel String?
+  note                 String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  ticket               KdsTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([merchantId, updatedAt])
+  @@map("kds_ticket_overrides")
+}
+
+model KdsTicketItem {
+  id             String    @id @default(cuid())
+  ticketId       String
+  cloverLineItemId String?
+  providerLineItemId String?
+  itemKey        String
+  itemId         String?
+  name           String
+  alternateName  String?
+  note           String?
+  modifiers      Json?
+  quantity       Int       @default(1)
+  refunded       Boolean   @default(false)
+  printed        Boolean   @default(false)
+  completed      Boolean   @default(false)
+  completedAt    DateTime?
+  completedBy    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  ticket         KdsTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([ticketId])
+  @@unique([ticketId, itemKey])
+  @@map("kds_ticket_items")
+}
+
+model KdsProviderConfig {
+  id                   String                 @id @default(cuid())
+  merchantId           String
+  provider             OrderProvider
+  enabled              Boolean                @default(false)
+  environment          IntegrationEnvironment @default(STAGING)
+  externalLocationId   String?
+  providerLocationId   String?
+  channelLinkId        String?
+  apiToken             String?
+  hmacSecret           String?
+  apiTokenCipher       Bytes?
+  hmacSecretCipher     Bytes?
+  registerWebhookStatus String?
+  ordersWebhookStatus  String?
+  lastRegisterWebhookAt DateTime?
+  lastOrderWebhookAt   DateTime?
+  config               Json?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  merchant             CloverMerchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@unique([merchantId, provider])
+  @@index([provider, channelLinkId])
+  @@index([provider, externalLocationId])
+  @@map("kds_provider_configs")
+}
+
+model KdsTicketEvent {
+  id         String         @id @default(cuid())
+  ticketId   String
+  merchantId String
+  action     KdsAction
+  source     KdsEventSource
+  actor      String?
+  payload    Json?
+  createdAt  DateTime       @default(now())
+  ticket     KdsTicket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([ticketId, createdAt])
+  @@index([merchantId, createdAt])
+  @@map("kds_ticket_events")
+}
+
+model KdsScreenSession {
+  id         String         @id @default(cuid())
+  merchantId String
+  screenName String
+  lastSeenAt DateTime       @default(now())
+  muted      Boolean        @default(false)
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  merchant   CloverMerchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([merchantId, lastSeenAt])
+  @@map("kds_screen_sessions")
+}
+
+model KdsFilter {
+  merchantId          String         @id
+  allowedOrderTypes   Json?
+  blockedSources      Json?
+  paymentStates       Json?
+  createdAfterMinutes Int?
+  searchText          String?
+  includeCompleted    Boolean        @default(false)
+  soundEnabled        Boolean        @default(true)
+  screenPinEnabled    Boolean        @default(false)
+  boardSettings       Json?
+  updatedAt           DateTime       @updatedAt
+  createdAt           DateTime       @default(now())
+  merchant            CloverMerchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@map("kds_filters")
+}
+
+model CloverWebhookEvent {
+  id           String         @id @default(cuid())
+  merchantId   String
+  eventId      String
+  fingerprint  String
+  topic        String?
+  orderId      String?
+  modifiedTime DateTime?
+  raw          Json
+  createdAt    DateTime       @default(now())
+  merchant     CloverMerchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  // Dedup key (GH #129): Clover delivers at-least-once, so dedup on the
+  // payload's stable `eventId` rather than a content fingerprint. When the
+  // payload carries no eventId, the ingest layer synthesizes one from the
+  // fingerprint components (see clover-webhooks.ts), so this constraint still
+  // collapses identical re-deliveries while never dropping distinct events.
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@unique([merchantId, eventId])
+  @@index([merchantId, createdAt])
+  @@index([merchantId, orderId])
+  @@map("clover_webhook_events")
+}
+
+model KdsProviderEvent {
+  id                  String              @id @default(cuid())
+  provider            OrderProvider
+  merchantId          String
+  sourceOrderId       String
+  fingerprint         String              @unique
+  topic               String?
+  raw                 Json
+  status              ProviderEventStatus @default(RECEIVED)
+  receivedAt          DateTime            @default(now())
+  queuedAt            DateTime?
+  processingStartedAt DateTime?
+  processedAt         DateTime?
+  lastError           String?
+  attempts            Int                 @default(0)
+  jobId               String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  merchant            CloverMerchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([status, receivedAt])
+  @@index([merchantId, provider, sourceOrderId])
+  @@map("kds_provider_events")
+}
+
+model KdsRealtimeState {
+  merchantId String         @id
+  seq        BigInt         @default(0)
+  updatedAt  DateTime       @updatedAt
+  merchant   CloverMerchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@map("kds_realtime_states")
+}
+
+model KdsRealtimeEvent {
+  id          String         @id
+  merchantId  String
+  seq         BigInt
+  type        String
+  payload     Json
+  publishedAt DateTime?
+  createdAt   DateTime       @default(now())
+  merchant    CloverMerchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@unique([merchantId, seq])
+  @@index([merchantId, createdAt])
+  @@map("kds_realtime_events")
+}
+
+model KdsRealtimeReceipt {
+  id                  String         @id @default(cuid())
+  eventId             String         @unique
+  merchantId          String
+  ticketId            String
+  providerEventId     String?
+  webhookReceivedAt   DateTime?
+  realtimePublishedAt DateTime?
+  browserReceivedAt   DateTime
+  renderCommittedAt   DateTime
+  webhookToRenderMs   Int?
+  realtimeToBrowserMs Int?
+  browserRenderMs     Int?
+  createdAt           DateTime       @default(now())
+  merchant            CloverMerchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([merchantId, createdAt])
+  @@index([providerEventId])
+  @@map("kds_realtime_receipts")
+}
+
+model DeadLetterJob {
+  id         String         @id @default(cuid())
+  merchantId String?
+  jobType    String
+  reason     String
+  payload    Json
+  attempts   Int            @default(0)
+  createdAt  DateTime       @default(now())
+  resolvedAt DateTime?
+  merchant   CloverMerchant? @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL come later)
+  @@index([merchantId, createdAt])
+  @@map("dead_letter_jobs")
+}
+
+model AiConversation {
+  id        String      @id @default(cuid())
+  userId    String
+  title     String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  messages  AiMessage[]
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL later)
+  @@index([userId, updatedAt(sort: Desc)])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             String          @id @default(cuid())
+  conversationId String
+  conversation   AiConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           AiMessageRole
+  content        Json
+  inputTokens    Int?
+  outputTokens   Int?
+  toolCallCount  Int?
+  latencyMs      Int?
+  createdAt      DateTime        @default(now())
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL later)
+  @@index([conversationId, createdAt])
+  @@map("ai_messages")
+}
+
+enum AiMessageRole {
+  user
+  assistant
+  system
+  tool
+}
+
+// Lean per-call usage ledger for the AI Usage & cost view. Distinct from AiMessage
+// (which stores conversation CONTENT for chat only): this captures token counts for
+// EVERY AI call — chat, invoice vision-scan, receipt matcher, emoji suggest — tagged
+// by `feature` and `modelId`, so spend can be aggregated by model + feature without
+// coupling analytics to conversation storage or to a single code path. No content,
+// no PII; written fire-and-forget so a ledger hiccup never fails the underlying call.
+model AiUsageEvent {
+  id                String   @id @default(cuid())
+  feature           String   // chat | vision_scan | matcher | emoji
+  modelId           String
+  inputTokens       Int      @default(0)
+  // Subset of inputTokens served from the prompt cache. Priced at the provider's
+  // (much cheaper) cache-hit rate so the cost estimate isn't inflated — DeepSeek's
+  // cache hit can be ~25-100x cheaper than a miss. 0 when the provider reports none.
+  cachedInputTokens Int      @default(0)
+  outputTokens      Int      @default(0)
+  createdAt         DateTime @default(now())
+
+  tenantId String? // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant, unused until Phase-3 RLS (index + NOT NULL later)
+  @@index([createdAt])
+  @@map("ai_usage_events")
+}
+
+// Cached AI model price table, synced from LiteLLM's public price map by the
+// Settings → AI "Refresh prices" action and the weekly cron. A single row
+// (id = "litellm") holds the provider-filtered catalog as JSON so the Usage &
+// cost estimate can price any model an operator selects without a code change.
+// The cost read path falls back to the committed model-prices.generated.json
+// when this is empty, so a fresh deploy still prices the known models.
+model AiModelPriceCache {
+  id         String   @id // stable cache key, currently "litellm"
+  prices     Json // { [catalogKey]: { inputPer1M, cachedInputPer1M?, outputPer1M } } — USD per 1M tokens
+  modelCount Int      @default(0)
+  source     String   @default("litellm")
+  fetchedAt  DateTime @default(now())
+
+  @@map("ai_model_price_cache")
+}
+
+// Backoffice-owned runtime config (ADR-0016 extends ADR-0011 bounded exception).
+// Values are JSON-encoded strings; per-key types are enforced by zod schemas in
+// `packages/contracts/src/settings.ts`. category is a stable grouping ("ai",
+// "clover", "secret", ...) used by the /settings/system UI to bucket keys and to
+// trigger encryption / masking for `secret` rows.
+//
+// Schema V2 (issue #245): `merchantId` is the multi-location scope id (ADR-0018),
+// not multi-tenant scaffolding. Every read and write goes through
+// `apps/backoffice-web/lib/settings/db.ts`, which routes brand-tier keys to
+// `BRAND_SCOPE_ID` ("default-merchant", preserved from schema V2) and
+// location-tier keys to a real `Location.id`. The default on the column keeps
+// existing rows valid post-migration without a backfill step.
+model AppSetting {
+  merchantId String   @default("default-merchant")
+  key        String
+  value      String
+  category   String
+  // Optimistic-concurrency counter (issue #177). Starts at 0; the write path in
+  // `apps/backoffice-web/lib/settings/db.ts` increments it on every persisted
+  // change. The PUT route compares an `ifVersion` from the client against this
+  // to 409 a last-write-wins clobber. Existing rows backfill to 0 via the
+  // column default, so no data step is needed.
+  version    Int      @default(0)
+  updatedAt  DateTime @updatedAt
+  updatedBy  String?
+  createdAt  DateTime @default(now())
+
+  @@id([merchantId, key])
+  @@index([category])
+  @@map("app_setting")
+}
+
+// Immutable change log for app_setting writes (issue #159). One row per
+// persisted change (no-op writes where newValue === oldValue are skipped),
+// written inside the same transaction as the upsert so the trail can't diverge
+// from the live value. `changedByUsername` is DENORMALIZED so deleting the
+// admin account never breaks audit reads (the account lives in db-auth, a
+// separate schema we can't FK to anyway — Iron Law #1). Append-only by
+// convention: nothing in the app updates or deletes these rows. Secret values
+// (category=secret) are stored ENCRYPTED upstream, so the ciphertext envelope —
+// never plaintext key material — is what lands in old/new value here.
+model AppSettingAudit {
+  id                String   @id @default(cuid())
+  merchantId        String   @default("default-merchant")
+  key               String
+  oldValue          String?
+  newValue          String?
+  changedAt         DateTime @default(now())
+  changedBy         String?
+  changedByUsername String?
+
+  @@index([merchantId, key, changedAt(sort: Desc)])
+  @@index([changedAt(sort: Desc)])
+  @@map("app_setting_audit")
+}

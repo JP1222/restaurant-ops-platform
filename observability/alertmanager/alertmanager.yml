@@ -1,0 +1,62 @@
+# Alertmanager — routes the Prometheus alert rules (observability/prometheus/
+# rules/*.yml) to Slack. This is the "first Alertmanager" anticipated by
+# ADR-0034: Prometheus (prometheus.yml `alerting:` block) pushes firing alerts
+# here, and this fans them to the suite Slack channel with native dedup /
+# grouping / resolve — covering ALL rules (kds-dlq, clover-sync, analytics-sync,
+# backfill, target-liveness), not just the host-cron container check.
+#
+# The Slack webhook is NOT in this file. The alertmanager container writes the
+# host secret SLACK_WEBHOOK_URL (from .env.observability) to /tmp/slack_url at
+# boot, and `api_url_file` reads it from there — so the secret never lands in the
+# repo. After editing, RECREATE the alertmanager container (single-file
+# bind-mount; see .github/OBSERVABILITY.md "Applying observability changes").
+#
+# Validate locally:
+#   docker run --rm -v "$PWD/observability/alertmanager:/c" \
+#     --entrypoint amtool prom/alertmanager:v0.28.0 check-config /c/alertmanager.yml
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: slack-default
+  # One channel, so grouping is mostly about collapsing a burst into one message.
+  group_by: ['alertname', 'job']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Critical (a service is down — e.g. TargetDown): re-ping hourly until resolved.
+    - matchers:
+        - severity = "critical"
+      receiver: slack-critical
+      repeat_interval: 1h
+
+receivers:
+  - name: slack-default
+    slack_configs:
+      - api_url_file: /tmp/slack_url
+        channel: '#alerts'   # ignored by an incoming webhook (bound to its own channel); required by schema
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        title: '{{ if eq .Status "firing" }}🟠{{ else }}🟢{{ end }} [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: |-
+          {{ range .Alerts -}}
+          *{{ .Labels.severity }}* · `{{ .Labels.job }}{{ if .Labels.instance }} / {{ .Labels.instance }}{{ end }}`
+          {{ .Annotations.summary }}
+          {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+          {{ end }}
+
+  - name: slack-critical
+    slack_configs:
+      - api_url_file: /tmp/slack_url
+        channel: '#alerts'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        title: '{{ if eq .Status "firing" }}🔴{{ else }}🟢{{ end }} [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: |-
+          {{ range .Alerts -}}
+          *CRITICAL* · `{{ .Labels.job }}{{ if .Labels.instance }} / {{ .Labels.instance }}{{ end }}`
+          {{ .Annotations.summary }}
+          {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+          {{ end }}

@@ -1,0 +1,27 @@
+# App-local ignore for apps/inventory-api. The repo-root .dockerignore already
+# trims the big shared dirs (node_modules, .git, dist) from the build context;
+# this file documents the inventory-api-specific junk so nothing app-local
+# (build output, test artifacts, env files, editor cruft) sneaks into an image
+# layer or busts the layer cache. Mirrors apps/analytics-api/.dockerignore.
+.git
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules
+node_modules*
+dist
+generated
+coverage
+.turbo
+.cache
+.vite
+.vite-temp
+tmp
+exports
+# Tests + their configs never need to ship in the runtime image (the Dockerfile
+# builds only src via tsc); keep them out of the context entirely.
+tests
+vitest.config.ts
+vitest.integration.config.ts
+*.log

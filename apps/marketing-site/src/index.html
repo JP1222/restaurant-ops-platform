@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EXAMPLE KITCHEN — Hand-Rolled Ice Cream, Bubble Tea &amp; Smoothies · Anytown Mall</title>
+  <meta name="description" content="Hand-rolled ice cream, bubble tea, and smoothies made fresh on a frozen pan, right in front of you. Inside Anytown Mall in Anytown, ST." />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#FFE9D2" />
+
+  <link rel="icon" href="public/favicon.svg" type="image/svg+xml" />
+  <link rel="canonical" href="https://www.example.com/" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="EXAMPLE KITCHEN — Hand-Rolled Ice Cream, Bubble Tea &amp; Smoothies" />
+  <meta property="og:description" content="Made fresh on a frozen pan, right in front of you. Inside Anytown Mall in Anytown, ST." />
+  <meta property="og:url" content="https://www.example.com/" />
+  <meta property="og:image" content="https://www.example.com/public/signatures/rop_1.webp" />
+  <meta property="og:site_name" content="EXAMPLE KITCHEN" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="EXAMPLE KITCHEN" />
+  <meta name="twitter:description" content="Hand-rolled ice cream, bubble tea &amp; smoothies at Anytown Mall." />
+  <meta name="twitter:image" content="https://www.example.com/public/signatures/rop_1.webp" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- Fonts loaded here (not via styles.css @import) so the browser can
+       discover them in parallel with the stylesheet instead of waiting for
+       CSS to parse. DM Sans 800 dropped — nothing in styles.css uses it. -->
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Caprasimo&family=DM+Sans:wght@400;500;700&family=Geist+Mono:wght@400;500&display=swap" />
+
+  <!-- Preload the hero LCP image so it starts downloading before the
+       stylesheet resolves the <img> in the layout. -->
+  <link rel="preload" as="image" href="public/signatures/rop_1.webp" fetchpriority="high" />
+
+  <link rel="stylesheet" href="styles.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    "name": "EXAMPLE KITCHEN",
+    "image": "https://www.example.com/public/signatures/rop_1.webp",
+    "url": "https://www.example.com/",
+    "servesCuisine": ["Rolled Ice Cream", "Bubble Tea", "Smoothies"],
+    "priceRange": "$$",
+    "telephone": "+1-555-010-0000",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "123 Main St",
+      "addressLocality": "Anytown",
+      "addressRegion": "ST",
+      "postalCode": "00000",
+      "addressCountry": "US"
+    },
+    "openingHoursSpecification": [
+      { "@type": "OpeningHoursSpecification", "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"], "opens": "10:00", "closes": "20:00" },
+      { "@type": "OpeningHoursSpecification", "dayOfWeek": "Sunday", "opens": "12:00", "closes": "18:00" }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+<!-- ============================================================
+     Reusable SVG defs — star and arrow live in here so we don't
+     repeat the paths everywhere. <use href="#star"/> etc.
+     ============================================================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-star" viewBox="0 0 24 24">
+      <path d="M12 2.5l2.6 5.9 6.4.6-4.8 4.4 1.4 6.3L12 16.9 6.4 19.7l1.4-6.3L3 8.9l6.4-.6L12 2.5z" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24">
+      <path d="M5 12h14M13 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ============================================================
+     NAV
+     ============================================================ -->
+<header class="site-nav" id="site-nav">
+  <div class="frame-wide nav-row">
+    <a href="#top" class="nav-brand"><span class="rop">Example</span><span class="rollo">Kitchen</span></a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#menu">Menu</a>
+      <a href="#how">How</a>
+      <a href="#sig">Signature</a>
+      <a href="#visit">Visit</a>
+    </nav>
+    <a href="https://order.example.com/menu" class="btn nav-cta">
+      Order now
+      <svg width="14" height="14" aria-hidden="true" style="color:#fff"><use href="#i-arrow"/></svg>
+    </a>
+  </div>
+</header>
+
+<main>
+
+<!-- ============================================================
+     HERO
+     ============================================================ -->
+<section id="top" class="hero-section">
+  <!-- Sprinkles (background decoration) -->
+  <span class="sprinkle sp-dot"  style="top:60px;  left:6%;  width:16px; height:16px; background:var(--pink)"></span>
+  <span class="sprinkle sp-pill" style="top:120px; left:14%; width:12px; height:28px; background:var(--mint);   transform:rotate(28deg)"></span>
+  <span class="sprinkle sp-dot"  style="top:240px; left:4%;  width:20px; height:20px; background:var(--orange)"></span>
+  <span class="sprinkle sp-pill" style="top:380px; left:10%; width:14px; height:30px; background:var(--grape);  transform:rotate(-42deg)"></span>
+  <span class="sprinkle sp-dot"  style="top:80px;  right:4%;  width:22px; height:22px; background:var(--sky)"></span>
+  <span class="sprinkle sp-pill" style="top:180px; right:10%; width:14px; height:30px; background:var(--lemon); transform:rotate(56deg)"></span>
+  <span class="sprinkle sp-dot"  style="top:360px; right:6%;  width:16px; height:16px; background:var(--pink)"></span>
+  <span class="sprinkle sp-pill" style="top:520px; right:14%; width:12px; height:24px; background:var(--mint);  transform:rotate(-22deg)"></span>
+
+  <div class="frame-wide hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow hero-eyebrow">★ Now open · Anytown Mall</span>
+      <h1 class="hero-title">
+        <span class="hero-slogan">
+          <span class="hero-slogan-1">You only</span>
+          <span class="hero-slogan-2">ROLL</span>
+          <span class="hero-slogan-3">once.</span>
+        </span>
+      </h1>
+      <p class="hero-lead">
+        Hand-rolled ice cream, bubble tea &amp; smoothies — made fresh on a frozen pan,
+        right in front of you.
+      </p>
+      <div class="hero-cta-row">
+        <a href="https://order.example.com/menu" class="btn btn-lg">
+          Order online
+          <svg width="18" height="18" aria-hidden="true" style="color:#fff"><use href="#i-arrow"/></svg>
+        </a>
+        <a href="#menu" class="btn btn-lg btn-cream">See the menu</a>
+      </div>
+      <div class="hero-rating">
+        <span class="hero-rating-stars" style="color:var(--orange)" aria-label="5 out of 5 stars">
+          <svg width="18" height="18"><use href="#i-star"/></svg>
+          <svg width="18" height="18"><use href="#i-star"/></svg>
+          <svg width="18" height="18"><use href="#i-star"/></svg>
+          <svg width="18" height="18"><use href="#i-star"/></svg>
+          <svg width="18" height="18"><use href="#i-star"/></svg>
+        </span>
+        <strong>4.9 / 5</strong>
+        <span class="meta">· 320+ Anytown locals can&rsquo;t be wrong</span>
+      </div>
+    </div>
+
+    <div class="hero-art" aria-hidden="true">
+      <svg class="hero-blob" viewBox="0 0 500 500">
+        <path d="M 250 60 Q 430 80 440 240 Q 460 410 290 430 Q 110 460 90 290 Q 70 90 250 60 Z" fill="var(--pink-soft)" />
+        <circle cx="380" cy="120" r="48" fill="var(--lemon)" />
+        <circle cx="100" cy="380" r="36" fill="var(--mint)" />
+      </svg>
+      <div class="hero-main">
+        <div class="hero-main-frame">
+          <img src="public/signatures/rop_1.webp" alt="Strawberry rolled ice cream" width="1254" height="1254" fetchpriority="high" decoding="async" />
+          <span class="hero-price">$7.99</span>
+        </div>
+        <p class="hero-caption">★ STRAWBERRY CRUMBLE · signature</p>
+      </div>
+      <div class="hero-mango">
+        <div class="frame-img"><img src="public/signatures/signature_4.webp" alt="Mango rolled ice cream" /></div>
+      </div>
+      <div class="hero-oreo">
+        <div class="frame-img"><img src="public/signatures/signature_1.webp" alt="Oreo rolled ice cream" /></div>
+      </div>
+      <div class="hero-callout">
+        <div class="hero-callout-tag">try this! ↓</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     MARQUEE
+     ============================================================ -->
+<div class="marq" id="marquee" aria-hidden="true">
+  <div class="marq-track">
+    <span>
+      <span>FRESH</span><span class="marq-emoji">🍓</span>
+      <span>FUN</span><span class="marq-emoji">🍦</span>
+      <span>ROLLED</span><span class="marq-emoji">✨</span>
+      <span>BUBBLE TEA</span><span class="marq-emoji">🧋</span>
+      <span>SMOOTHIES</span><span class="marq-emoji">🥭</span>
+      <span>MADE TO ORDER</span><span class="marq-emoji">👀</span>
+    </span>
+    <span>
+      <span>FRESH</span><span class="marq-emoji">🍓</span>
+      <span>FUN</span><span class="marq-emoji">🍦</span>
+      <span>ROLLED</span><span class="marq-emoji">✨</span>
+      <span>BUBBLE TEA</span><span class="marq-emoji">🧋</span>
+      <span>SMOOTHIES</span><span class="marq-emoji">🥭</span>
+      <span>MADE TO ORDER</span><span class="marq-emoji">👀</span>
+    </span>
+  </div>
+</div>
+
+<!-- ============================================================
+     HOW WE ROLL
+     ============================================================ -->
+<section id="how" class="how pad-xl">
+  <div class="frame">
+    <div class="section-header" style="margin-bottom:56px">
+      <span class="eyebrow">How we roll</span>
+      <h2 class="h-mega" style="margin:20px auto 0; max-width:14ch">
+        5 minutes, <span class="hl-mint">one frozen pan</span>,<br />
+        a tiny show just for you.
+      </h2>
+    </div>
+    <div class="how-grid">
+      <article class="card how-card t-pink rot-l1">
+        <div class="how-card-n">01</div>
+        <h3 class="how-card-title">Pick your base</h3>
+        <p class="how-card-body">Milk, oat, coconut, or yogurt — your call.</p>
+      </article>
+      <article class="card how-card t-mint rot-r1">
+        <div class="how-card-n">02</div>
+        <h3 class="how-card-title">Choose mix-ins</h3>
+        <p class="how-card-body">Fresh fruit, cookies, candy, syrups. Mix as many as you like.</p>
+      </article>
+      <article class="card how-card t-lemon rot-l1">
+        <div class="how-card-n">03</div>
+        <h3 class="how-card-title">Pour &amp; chop</h3>
+        <p class="how-card-body">Cream hits the −15°F pan and your mix-ins get chopped in.</p>
+      </article>
+      <article class="card how-card t-peach rot-r1">
+        <div class="how-card-n">04</div>
+        <h3 class="how-card-title">Spread &amp; roll</h3>
+        <p class="how-card-body">Spread thin, freeze fast, scrape into tight little rolls.</p>
+      </article>
+      <article class="card how-card t-sky rot-l1">
+        <div class="how-card-n">05</div>
+        <h3 class="how-card-title">Top &amp; serve</h3>
+        <p class="how-card-body">Pile on the toppings. Hand it over. Watch you smile.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     MENU
+     ============================================================ -->
+<section id="menu" class="menu pad-xl">
+  <div class="frame">
+    <div class="section-header">
+      <span class="eyebrow">The menu</span>
+      <h2 class="h-mega" style="margin:20px auto 16px; max-width:16ch">
+        Pick your <span style="color:var(--pink)">vibe</span> today.
+      </h2>
+      <p class="lead" style="max-width:540px; margin:0 auto">
+        Sizes shown are starter cups — load &rsquo;em up with whatever toppings you want.
+        Real prices, no hidden fees.
+      </p>
+    </div>
+
+    <div class="menu-tabs" role="tablist" aria-label="Menu category">
+      <button class="tab" role="tab" data-tab="rolled"    aria-selected="true"  aria-controls="panel-rolled" id="tab-rolled" tabindex="0">
+        <span class="tab-icon">🍦</span> Rolled Ice Cream <span class="tab-count">6</span>
+      </button>
+      <button class="tab" role="tab" data-tab="bubble"    aria-selected="false" aria-controls="panel-bubble" id="tab-bubble" tabindex="-1">
+        <span class="tab-icon">🧋</span> Bubble Tea <span class="tab-count">8</span>
+      </button>
+      <button class="tab" role="tab" data-tab="smoothies" aria-selected="false" aria-controls="panel-smoothies" id="tab-smoothies" tabindex="-1">
+        <span class="tab-icon">🥭</span> Smoothies <span class="tab-count">6</span>
+      </button>
+    </div>
+
+    <!-- ROLLED panel -->
+    <div class="menu-panel" id="panel-rolled" role="tabpanel" aria-labelledby="tab-rolled" tabindex="0">
+      <div class="rolled-grid">
+        <article class="card rolled-card">
+          <div class="rolled-photo tint-pink">
+            <img src="public/signatures/signature_1.webp"
+                 srcset="public/signatures/signature_1-480.webp 480w, public/signatures/signature_1-800.webp 800w, public/signatures/signature_1.webp 1024w"
+                 sizes="(min-width: 1000px) 300px, (min-width: 600px) 45vw, 90vw"
+                 alt="Cookies &amp; Cream rolled ice cream" loading="lazy" />
+            <span class="badge badge-top">TOP 5</span>
+          </div>
+          <div class="rolled-meta">
+            <div class="rolled-meta-head"><h3>Cookies &amp; Cream</h3><span class="price">$6.99</span></div>
+            <p>Oreo cookies rolled into vanilla cream</p>
+          </div>
+        </article>
+        <article class="card rolled-card">
+          <div class="rolled-photo tint-peach">
+            <img src="public/signatures/signature_2.webp"
+                 srcset="public/signatures/signature_2-480.webp 480w, public/signatures/signature_2-800.webp 800w, public/signatures/signature_2-1200.webp 1200w"
+                 sizes="(min-width: 1000px) 300px, (min-width: 600px) 45vw, 90vw"
+                 alt="Strawberry Cheesecake rolled ice cream" loading="lazy" />
+            <span class="badge badge-new">NEW</span>
+          </div>
+          <div class="rolled-meta">
+            <div class="rolled-meta-head"><h3>Strawberry Cheesecake</h3><span class="price">$6.99</span></div>
+            <p>Fresh strawberries + cheesecake bites</p>
+          </div>
+        </article>
+        <article class="card rolled-card">
+          <div class="rolled-photo tint-mint">
+            <img src="public/signatures/signature_3.webp"
+                 srcset="public/signatures/signature_3-480.webp 480w, public/signatures/signature_3-800.webp 800w, public/signatures/signature_3-1200.webp 1200w"
+                 sizes="(min-width: 1000px) 300px, (min-width: 600px) 45vw, 90vw"
+                 alt="Choco Oreo rolled ice cream" loading="lazy" />
+          </div>
+          <div class="rolled-meta">
+            <div class="rolled-meta-head"><h3>Choco Oreo</h3><span class="price">$6.99</span></div>
+            <p>Chocolate base, Oreo crumble</p>
+          </div>
+        </article>
+        <article class="card rolled-card">
+          <div class="rolled-photo tint-lemon">
+            <img src="public/signatures/signature_4.webp"
+                 srcset="public/signatures/signature_4-480.webp 480w, public/signatures/signature_4-800.webp 800w, public/signatures/signature_4-1200.webp 1200w"
+                 sizes="(min-width: 1000px) 300px, (min-width: 600px) 45vw, 90vw"
+                 alt="Mango Strawberry rolled ice cream" loading="lazy" />
+            <span class="badge badge-trend">+60% 📈</span>
+          </div>
+          <div class="rolled-meta">
+            <div class="rolled-meta-head"><h3>Mango Strawberry</h3><span class="price">$6.99</span></div>
+            <p>Ripe mango + fresh strawberry</p>
+          </div>
+        </article>
+        <article class="card rolled-card">
+          <div class="rolled-photo tint-sky">
+            <img src="public/signatures/signature_5.webp"
+                 srcset="public/signatures/signature_5-480.webp 480w, public/signatures/signature_5-800.webp 800w, public/signatures/signature_5-1200.webp 1200w"
+                 sizes="(min-width: 1000px) 300px, (min-width: 600px) 45vw, 90vw"
+                 alt="Coconut M&amp;M rolled ice cream" loading="lazy" />
+          </div>
+          <div class="rolled-meta">
+            <div class="rolled-meta-head"><h3>Coconut M&amp;M</h3><span class="price">$6.99</span></div>
+            <p>Coconut cream + M&amp;M candy</p>
+          </div>
+        </article>
+        <article class="card rolled-card">
+          <div class="rolled-photo tint-pink">
+            <img src="public/signatures/signature_6.webp"
+                 srcset="public/signatures/signature_6-480.webp 480w, public/signatures/signature_6-800.webp 800w, public/signatures/signature_6-1200.webp 1200w"
+                 sizes="(min-width: 1000px) 300px, (min-width: 600px) 45vw, 90vw"
+                 alt="Vanilla Cheesecake rolled ice cream" loading="lazy" />
+          </div>
+          <div class="rolled-meta">
+            <div class="rolled-meta-head"><h3>Vanilla Cheesecake</h3><span class="price">$6.99</span></div>
+            <p>Vanilla cream + cheesecake swirl</p>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <!-- BUBBLE TEA panel -->
+    <div class="menu-panel" id="panel-bubble" role="tabpanel" aria-labelledby="tab-bubble" tabindex="0" hidden>
+      <div class="drink-grid">
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--mint-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#D9C49A" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="18" cy="55" r="2.4" fill="#2A1722"/><circle cx="24" cy="57" r="2.4" fill="#2A1722"/><circle cx="30" cy="55" r="2.4" fill="#2A1722"/><circle cx="36" cy="57" r="2.4" fill="#2A1722"/><circle cx="22" cy="50" r="2.4" fill="#2A1722"/><circle cx="30" cy="50" r="2.4" fill="#2A1722"/><circle cx="37" cy="50" r="2.4" fill="#2A1722"/><circle cx="40" cy="44" r="2.4" fill="#2A1722"/><circle cx="20" cy="44" r="2.4" fill="#2A1722"/>
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Classic Milk Tea</h4><span class="price">$5.99</span></div>
+          <p>Black tea + creamer + tapioca</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--mint-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#B98DC9" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="18" cy="55" r="2.4" fill="#2A1722"/><circle cx="24" cy="57" r="2.4" fill="#2A1722"/><circle cx="30" cy="55" r="2.4" fill="#2A1722"/><circle cx="36" cy="57" r="2.4" fill="#2A1722"/><circle cx="22" cy="50" r="2.4" fill="#2A1722"/><circle cx="30" cy="50" r="2.4" fill="#2A1722"/><circle cx="37" cy="50" r="2.4" fill="#2A1722"/><circle cx="40" cy="44" r="2.4" fill="#2A1722"/><circle cx="20" cy="44" r="2.4" fill="#2A1722"/>
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Taro Snow</h4><span class="price">$5.99</span></div>
+          <p>Real taro powder, pearls</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--mint-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#E89858" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="18" cy="55" r="2.4" fill="#2A1722"/><circle cx="24" cy="57" r="2.4" fill="#2A1722"/><circle cx="30" cy="55" r="2.4" fill="#2A1722"/><circle cx="36" cy="57" r="2.4" fill="#2A1722"/><circle cx="22" cy="50" r="2.4" fill="#2A1722"/><circle cx="30" cy="50" r="2.4" fill="#2A1722"/><circle cx="37" cy="50" r="2.4" fill="#2A1722"/><circle cx="40" cy="44" r="2.4" fill="#2A1722"/><circle cx="20" cy="44" r="2.4" fill="#2A1722"/>
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Thai Iced Tea</h4><span class="price">$5.99</span></div>
+          <p>Spiced Thai + condensed milk</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--mint-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#7A4A2E" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="18" cy="55" r="2.4" fill="#2A1722"/><circle cx="24" cy="57" r="2.4" fill="#2A1722"/><circle cx="30" cy="55" r="2.4" fill="#2A1722"/><circle cx="36" cy="57" r="2.4" fill="#2A1722"/><circle cx="22" cy="50" r="2.4" fill="#2A1722"/><circle cx="30" cy="50" r="2.4" fill="#2A1722"/><circle cx="37" cy="50" r="2.4" fill="#2A1722"/><circle cx="40" cy="44" r="2.4" fill="#2A1722"/><circle cx="20" cy="44" r="2.4" fill="#2A1722"/>
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Red Bean</h4><span class="price">$5.99</span></div>
+          <p>Sweet red bean + tapioca</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--mint-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#D6D790" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="18" cy="55" r="2.4" fill="#2A1722"/><circle cx="24" cy="57" r="2.4" fill="#2A1722"/><circle cx="30" cy="55" r="2.4" fill="#2A1722"/><circle cx="36" cy="57" r="2.4" fill="#2A1722"/><circle cx="22" cy="50" r="2.4" fill="#2A1722"/><circle cx="30" cy="50" r="2.4" fill="#2A1722"/><circle cx="37" cy="50" r="2.4" fill="#2A1722"/><circle cx="40" cy="44" r="2.4" fill="#2A1722"/><circle cx="20" cy="44" r="2.4" fill="#2A1722"/>
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Jasmine Green</h4><span class="price">$5.99</span></div>
+          <p>Floral, light, with honey jelly</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--mint-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#F4B5C4" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="18" cy="55" r="2.4" fill="#2A1722"/><circle cx="24" cy="57" r="2.4" fill="#2A1722"/><circle cx="30" cy="55" r="2.4" fill="#2A1722"/><circle cx="36" cy="57" r="2.4" fill="#2A1722"/><circle cx="22" cy="50" r="2.4" fill="#2A1722"/><circle cx="30" cy="50" r="2.4" fill="#2A1722"/><circle cx="37" cy="50" r="2.4" fill="#2A1722"/><circle cx="40" cy="44" r="2.4" fill="#2A1722"/><circle cx="20" cy="44" r="2.4" fill="#2A1722"/>
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Lychee Fizz</h4><span class="price">$5.99</span></div>
+          <p>Lychee + sparkling, popping boba</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--mint-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#A6CE39" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="18" cy="55" r="2.4" fill="#2A1722"/><circle cx="24" cy="57" r="2.4" fill="#2A1722"/><circle cx="30" cy="55" r="2.4" fill="#2A1722"/><circle cx="36" cy="57" r="2.4" fill="#2A1722"/><circle cx="22" cy="50" r="2.4" fill="#2A1722"/><circle cx="30" cy="50" r="2.4" fill="#2A1722"/><circle cx="37" cy="50" r="2.4" fill="#2A1722"/><circle cx="40" cy="44" r="2.4" fill="#2A1722"/><circle cx="20" cy="44" r="2.4" fill="#2A1722"/>
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Honeydew</h4><span class="price">$5.99</span></div>
+          <p>Sweet honeydew melon, creamy</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--mint-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#F8848F" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="18" cy="55" r="2.4" fill="#2A1722"/><circle cx="24" cy="57" r="2.4" fill="#2A1722"/><circle cx="30" cy="55" r="2.4" fill="#2A1722"/><circle cx="36" cy="57" r="2.4" fill="#2A1722"/><circle cx="22" cy="50" r="2.4" fill="#2A1722"/><circle cx="30" cy="50" r="2.4" fill="#2A1722"/><circle cx="37" cy="50" r="2.4" fill="#2A1722"/><circle cx="40" cy="44" r="2.4" fill="#2A1722"/><circle cx="20" cy="44" r="2.4" fill="#2A1722"/>
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Strawberry Cloud</h4><span class="price">$5.99</span></div>
+          <p>Real strawberry + cream cap</p>
+        </article>
+      </div>
+    </div>
+
+    <!-- SMOOTHIES panel -->
+    <div class="menu-panel" id="panel-smoothies" role="tabpanel" aria-labelledby="tab-smoothies" tabindex="0" hidden>
+      <div class="drink-grid">
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--orange-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#F8848F" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Strawberry</h4><span class="price">$5.99</span></div>
+          <p>Fresh strawberry, creamy</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--orange-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#FFB13C" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Mango</h4><span class="price">$5.99</span></div>
+          <p>Ripe mango, tropical</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--orange-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#7A8BD8" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Blueberry</h4><span class="price">$5.99</span></div>
+          <p>Blueberry, smooth &amp; cool</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--orange-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#A8D770" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Honeydew</h4><span class="price">$5.99</span></div>
+          <p>Honeydew melon, light &amp; creamy</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--orange-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#E8D2B5" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Coconut</h4><span class="price">$5.99</span></div>
+          <p>Coconut milk, silky</p>
+        </article>
+        <article class="drink-card">
+          <svg class="cup" viewBox="0 0 56 66" aria-hidden="true">
+            <rect x="6" y="8" width="44" height="7" rx="3" fill="var(--orange-d)" stroke="#2A1722" stroke-width="2" />
+            <rect x="24" y="0" width="6" height="14" rx="2" fill="#FFD5E4" stroke="#2A1722" stroke-width="1.6" />
+            <path d="M 8 14 L 12 62 L 44 62 L 48 14 Z" fill="#8A5A3C" stroke="#2A1722" stroke-width="2" stroke-linejoin="round" />
+            <path d="M 14 22 L 16 50" stroke="rgba(255,255,255,.5)" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <div class="drink-head"><h4>Chocolate</h4><span class="price">$5.99</span></div>
+          <p>Rich chocolate, creamy</p>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SIGNATURES
+     ============================================================ -->
+<section id="sig" class="sig pad-xl">
+  <span class="sprinkle sp-dot"  style="top:60px;  left:6%;  width:18px; height:18px; background:var(--mint)"></span>
+  <span class="sprinkle sp-pill" style="top:220px; left:3%;  width:14px; height:28px; background:var(--pink);  transform:rotate(32deg)"></span>
+  <span class="sprinkle sp-dot"  style="top:120px; right:5%; width:16px; height:16px; background:var(--lemon)"></span>
+  <span class="sprinkle sp-pill" style="top:320px; right:8%; width:12px; height:26px; background:var(--grape); transform:rotate(-18deg)"></span>
+
+  <div class="frame">
+    <div class="section-header">
+      <span class="eyebrow sig-eyebrow">★ Signature Series ★</span>
+      <h2 class="h-mega" style="margin:20px auto 12px; max-width:15ch">
+        Three big swings<br />
+        <span class="hl-butter">we&rsquo;re proud of.</span>
+      </h2>
+      <p class="lead" style="max-width:520px; margin:0 auto">
+        Our premium picks — a little extra everything.
+        Ask the team or order at the counter.
+      </p>
+    </div>
+
+    <div class="sig-grid">
+      <article class="card sig-card t-left">
+        <div class="sig-photo bg-pink">
+          <img src="public/signatures/rop_1.webp"
+               srcset="public/signatures/rop_1-480.webp 480w, public/signatures/rop_1-800.webp 800w, public/signatures/rop_1-1200.webp 1200w"
+               sizes="(min-width: 980px) 400px, (min-width: 620px) 45vw, 90vw"
+               alt="Strawberry Crumble signature" loading="lazy" />
+          <span class="sig-no">01</span>
+          <span class="sig-tag t-pink">House favorite</span>
+        </div>
+        <div class="sig-meta">
+          <div class="sig-meta-head"><h3>Strawberry Crumble</h3><span class="price">$7.99</span></div>
+          <p>Strawberry rolled cream · fresh berries · buttery crumble · pound cake</p>
+        </div>
+      </article>
+      <article class="card sig-card">
+        <div class="sig-photo bg-peach">
+          <img src="public/signatures/rop_2.webp"
+               srcset="public/signatures/rop_2-480.webp 480w, public/signatures/rop_2-800.webp 800w, public/signatures/rop_2.webp 1086w"
+               sizes="(min-width: 980px) 400px, (min-width: 620px) 45vw, 90vw"
+               alt="Waffle Bowl Classic signature" loading="lazy" />
+          <span class="sig-no">02</span>
+          <span class="sig-tag t-orange">Limited</span>
+        </div>
+        <div class="sig-meta">
+          <div class="sig-meta-head"><h3>Waffle Bowl Classic</h3><span class="price">$7.99</span></div>
+          <p>Rolled ice cream in a fresh house-made waffle bowl with fudge drizzle</p>
+        </div>
+      </article>
+      <article class="card sig-card t-right">
+        <div class="sig-photo bg-lemon">
+          <img src="public/signatures/signature_3.webp"
+               srcset="public/signatures/signature_3-480.webp 480w, public/signatures/signature_3-800.webp 800w, public/signatures/signature_3-1200.webp 1200w"
+               sizes="(min-width: 980px) 400px, (min-width: 620px) 45vw, 90vw"
+               alt="Dubai Chocolate Supreme signature" loading="lazy" />
+          <span class="sig-no">03</span>
+          <span class="sig-tag t-orange">Hot rn 🔥</span>
+        </div>
+        <div class="sig-meta">
+          <div class="sig-meta-head"><h3>Dubai Chocolate Supreme</h3><span class="price">$10.99</span></div>
+          <p>Chocolate rolls · pistachio cream · crispy kataifi — Dubai-style</p>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     REVIEWS
+     ============================================================ -->
+<section class="reviews pad-xl">
+  <div class="frame">
+    <div class="section-header">
+      <span class="eyebrow">What people are saying</span>
+      <h2 class="h-mega" style="margin:20px auto 16px; max-width:14ch">
+        <span style="color:var(--pink)">320+</span> Anytown<br />locals love us.
+      </h2>
+      <div class="reviews-rating">
+        <span class="stars" style="color:var(--orange)" aria-label="5 out of 5 stars">
+          <svg width="22" height="22"><use href="#i-star"/></svg>
+          <svg width="22" height="22"><use href="#i-star"/></svg>
+          <svg width="22" height="22"><use href="#i-star"/></svg>
+          <svg width="22" height="22"><use href="#i-star"/></svg>
+          <svg width="22" height="22"><use href="#i-star"/></svg>
+        </span>
+        <strong>4.9 / 5</strong>
+        <span class="meta">· Google + Yelp</span>
+      </div>
+    </div>
+
+    <div class="reviews-grid">
+      <article class="card review bg-pink t-left">
+        <span class="review-quote" aria-hidden="true">&ldquo;</span>
+        <div class="review-stars" style="color:var(--orange)" aria-label="5 stars">
+          <svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg>
+        </div>
+        <h3>Insta-worthy AND tastes amazing 😍</h3>
+        <p>My friends made me wait 10 minutes to take pics before I could eat mine. Worth it. The strawberry special is unreal.</p>
+        <div class="review-foot"><strong>— Maya R.</strong><span class="meta">Google · 2 weeks ago</span></div>
+      </article>
+      <article class="card review bg-mint t-right">
+        <span class="review-quote" aria-hidden="true">&ldquo;</span>
+        <div class="review-stars" style="color:var(--orange)" aria-label="5 stars">
+          <svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg>
+        </div>
+        <h3>Best spot in Anytown</h3>
+        <p>Watching them spread the cream on the cold pan, chop it up, and roll it right in front of you — kids were mesmerized.</p>
+        <div class="review-foot"><strong>— James T.</strong><span class="meta">Yelp · 1 month ago</span></div>
+      </article>
+      <article class="card review bg-lemon t-left">
+        <span class="review-quote" aria-hidden="true">&ldquo;</span>
+        <div class="review-stars" style="color:var(--orange)" aria-label="5 stars">
+          <svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg>
+        </div>
+        <h3>The Thai tea boba is dangerous</h3>
+        <p>I am here twice a week now. Send help. Also the M&amp;M rolled ice cream looks ridiculous in person.</p>
+        <div class="review-foot"><strong>— Priya N.</strong><span class="meta">Instagram · @priyaeats</span></div>
+      </article>
+      <article class="card review bg-peach t-right">
+        <span class="review-quote" aria-hidden="true">&ldquo;</span>
+        <div class="review-stars" style="color:var(--orange)" aria-label="5 stars">
+          <svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg><svg width="16" height="16"><use href="#i-star"/></svg>
+        </div>
+        <h3>A whole experience, not just dessert</h3>
+        <p>The team is SO friendly, they explain everything, and you get a show. Already planned my daughter&rsquo;s next birthday here.</p>
+        <div class="review-foot"><strong>— Brittany L.</strong><span class="meta">Google · 3 weeks ago</span></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     GALLERY
+     ============================================================ -->
+<section class="gallery pad-xl">
+  <span class="sprinkle sp-dot"  style="top:80px;  left:5%; width:14px; height:14px; background:var(--mint)"></span>
+  <span class="sprinkle sp-pill" style="top:200px; right:4%; width:12px; height:24px; background:var(--pink); transform:rotate(40deg)"></span>
+
+  <div class="frame">
+    <div class="gallery-head">
+      <div>
+        <span class="eyebrow">The wall</span>
+        <h2 class="h-mega" style="margin:20px 0 0">
+          Tag us! <span style="color:var(--pink)">#example</span>
+        </h2>
+      </div>
+      <span class="btn btn-butter is-soon" role="link" aria-disabled="true">Follow on IG · soon ✨</span>
+    </div>
+
+    <div class="gall-grid">
+      <div class="tile tile-tall" style="transform:rotate(-3deg)">
+        <div class="tile-inner bg-pink">
+          <img src="public/signatures/rop_1.webp"
+               srcset="public/signatures/rop_1-480.webp 480w, public/signatures/rop_1-800.webp 800w, public/signatures/rop_1-1200.webp 1200w"
+               sizes="(min-width: 880px) 300px, 45vw"
+               alt="" loading="lazy" />
+          <span class="tile-cap">#strawberrySpecial</span>
+        </div>
+      </div>
+      <div class="tile" style="transform:rotate(4deg)">
+        <div class="tile-inner bg-lemon">
+          <img src="public/signatures/signature_5.webp"
+               srcset="public/signatures/signature_5-480.webp 480w, public/signatures/signature_5-800.webp 800w, public/signatures/signature_5-1200.webp 1200w"
+               sizes="(min-width: 880px) 300px, 45vw"
+               alt="" loading="lazy" />
+          <span class="tile-cap">#M&amp;Mrainbow</span>
+        </div>
+      </div>
+      <div class="tile tile-wide" style="transform:rotate(-2deg)">
+        <div class="tile-inner bg-peach">
+          <img src="public/storefront-photo.webp"
+               srcset="public/storefront-photo-480.webp 480w, public/storefront-photo-800.webp 800w, public/storefront-photo-1200.webp 1200w"
+               sizes="(min-width: 880px) 600px, 90vw"
+               alt="EXAMPLE KITCHEN storefront at Anytown Mall" class="photo" loading="lazy" />
+          <span class="tile-cap">@ Anytown</span>
+        </div>
+      </div>
+      <div class="tile" style="transform:rotate(6deg)">
+        <div class="tile-inner bg-peach">
+          <img src="public/signatures/signature_3.webp"
+               srcset="public/signatures/signature_3-480.webp 480w, public/signatures/signature_3-800.webp 800w, public/signatures/signature_3-1200.webp 1200w"
+               sizes="(min-width: 880px) 300px, 45vw"
+               alt="" loading="lazy" />
+          <span class="tile-cap">#chocodrip</span>
+        </div>
+      </div>
+      <div class="tile tile-tall" style="transform:rotate(-5deg)">
+        <div class="tile-inner bg-mint">
+          <img src="public/signatures/rop_2.webp"
+               srcset="public/signatures/rop_2-480.webp 480w, public/signatures/rop_2-800.webp 800w, public/signatures/rop_2.webp 1086w"
+               sizes="(min-width: 880px) 300px, 45vw"
+               alt="" loading="lazy" />
+          <span class="tile-cap">#waffleboat</span>
+        </div>
+      </div>
+      <div class="tile" style="transform:rotate(3deg)">
+        <div class="tile-inner bg-pink">
+          <img src="public/signatures/signature_2.webp"
+               srcset="public/signatures/signature_2-480.webp 480w, public/signatures/signature_2-800.webp 800w, public/signatures/signature_2-1200.webp 1200w"
+               sizes="(min-width: 880px) 300px, 45vw"
+               alt="" loading="lazy" />
+          <span class="tile-cap">#shortcakeszn</span>
+        </div>
+      </div>
+      <div class="tile" style="transform:rotate(-2deg)">
+        <div class="tile-inner bg-lemon">
+          <img src="public/signatures/signature_4.webp"
+               srcset="public/signatures/signature_4-480.webp 480w, public/signatures/signature_4-800.webp 800w, public/signatures/signature_4-1200.webp 1200w"
+               sizes="(min-width: 880px) 300px, 45vw"
+               alt="" loading="lazy" />
+          <span class="tile-cap">#mangotango</span>
+        </div>
+      </div>
+      <div class="tile" style="transform:rotate(4deg)">
+        <div class="tile-inner bg-cream">
+          <img src="public/signatures/signature_6.webp"
+               srcset="public/signatures/signature_6-480.webp 480w, public/signatures/signature_6-800.webp 800w, public/signatures/signature_6-1200.webp 1200w"
+               sizes="(min-width: 880px) 300px, 45vw"
+               alt="" loading="lazy" />
+          <span class="tile-cap">#condenseddream</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     GIFT CARDS
+     ============================================================ -->
+<section id="gift" class="gift pad-xl">
+  <span class="sprinkle sp-dot"  style="top:12%; left:8%;  width:20px; height:20px; background:var(--lemon)"></span>
+  <span class="sprinkle sp-pill" style="top:20%; left:14%; width:14px; height:30px; background:var(--mint);  transform:rotate(28deg)"></span>
+  <span class="sprinkle sp-dot"  style="top:70%; left:6%;  width:16px; height:16px; background:var(--lemon)"></span>
+  <span class="sprinkle sp-dot"  style="top:18%; right:10%; width:24px; height:24px; background:var(--lemon)"></span>
+  <span class="sprinkle sp-pill" style="top:74%; right:4%;  width:16px; height:30px; background:var(--mint);  transform:rotate(-42deg)"></span>
+  <span class="sprinkle sp-dot"  style="top:48%; right:14%; width:12px; height:12px; background:var(--lemon)"></span>
+
+  <div class="frame gift-grid">
+    <div>
+      <span class="eyebrow gift-eyebrow">🎁 Gift cards</span>
+      <h2 class="h-mega">Send a friend<br />a sweet day.</h2>
+      <p class="gift-lead">
+        Digital gift cards delivered instantly by email. Redeem in-store or online —
+        the easiest birthday present you&rsquo;ll ever buy.
+      </p>
+      <div class="gift-amounts" role="group" aria-label="Gift card amount">
+        <button class="gift-amt" data-amt="10"  type="button" aria-pressed="false">$10</button>
+        <button class="gift-amt" data-amt="25"  type="button" aria-pressed="true">$25</button>
+        <button class="gift-amt" data-amt="50"  type="button" aria-pressed="false">$50</button>
+        <button class="gift-amt" data-amt="100" type="button" aria-pressed="false">$100</button>
+      </div>
+      <span class="btn btn-butter btn-lg gift-cta is-soon" role="link" aria-disabled="true"
+            title="Digital gift cards are coming soon — ask in-store for a printed gift card.">
+        Send a <span id="gift-amount-label">$25</span> card · soon
+        <svg width="18" height="18" aria-hidden="true" style="color:var(--ink)"><use href="#i-arrow"/></svg>
+      </span>
+    </div>
+
+    <div class="gift-card">
+      <div class="gift-card-face">
+        <div class="gift-card-head">
+          <span class="gift-card-brand"><span class="rop">Example</span> <span class="rollo">Kitchen</span></span>
+          <span class="gift-card-tag">Gift card</span>
+        </div>
+        <div class="gift-card-body">
+          <p class="lbl">Card amount</p>
+          <p class="amt" id="gift-card-amount">$25</p>
+          <p class="num">XXXX  XXXX  XXXX  0000</p>
+        </div>
+        <span class="sprinkle sp-dot" style="top:18px; right:36%; width:14px; height:14px; background:var(--pink)"></span>
+        <span class="sprinkle sp-dot" style="top:40px; right:30%; width:10px; height:10px; background:var(--mint-d)"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     VISIT
+     ============================================================ -->
+<section id="visit" class="visit pad-xl">
+  <div class="frame">
+    <div class="section-header">
+      <span class="eyebrow">Come find us</span>
+      <h2 class="h-mega" style="margin:20px auto 0; max-width:16ch">
+        Inside <span style="color:var(--pink)">Anytown</span><br />Mall.
+      </h2>
+    </div>
+
+    <div class="visit-grid">
+      <div class="card visit-card">
+        <div class="visit-meta">
+          <div>
+            <h3>📍 Address</h3>
+            <p>Anytown Mall<br />123 Main St<br />Anytown, ST 00000</p>
+            <div class="dir-links">
+              <a class="dir-link" target="_blank" rel="noopener"
+                 href="https://maps.google.com/?q=Anytown+Mall+Anytown">
+                Google Maps
+                <svg width="14" height="14" aria-hidden="true" style="color:var(--pink-d)"><use href="#i-arrow"/></svg>
+              </a>
+              <a class="dir-link" target="_blank" rel="noopener"
+                 href="https://maps.apple.com/?q=Anytown+Mall&address=123+Main+St">
+                Apple Maps
+                <svg width="14" height="14" aria-hidden="true" style="color:var(--pink-d)"><use href="#i-arrow"/></svg>
+              </a>
+            </div>
+          </div>
+          <div>
+            <h3>⏰ Hours</h3>
+            <table>
+              <tbody>
+                <tr><td class="d">Mon – Sat</td><td class="h">10:00 AM – 8:00 PM</td></tr>
+                <tr><td class="d">Sunday</td>   <td class="h">12:00 PM – 6:00 PM</td></tr>
+              </tbody>
+            </table>
+            <p class="holiday">Holiday hours follow the mall</p>
+          </div>
+        </div>
+
+        <div class="visit-divider"></div>
+
+        <div class="visit-pills">
+          <span class="visit-pill bg-milk">🚶 Walk-ins</span>
+          <span class="visit-pill bg-pink">🪑 Indoor seating</span>
+          <span class="visit-pill bg-mint">👯 Group orders</span>
+          <span class="visit-pill bg-lemon">🎂 Birthday parties</span>
+          <span class="visit-pill bg-peach">🧒 Kid-friendly</span>
+        </div>
+
+        <div class="visit-cta-row">
+          <a href="https://order.example.com/menu" class="btn">
+            Order online
+            <svg width="14" height="14" aria-hidden="true" style="color:#fff"><use href="#i-arrow"/></svg>
+          </a>
+          <a href="tel:+15550100000" class="btn btn-cream">📞 (555) 010-0000</a>
+        </div>
+      </div>
+
+      <div class="visit-side">
+        <div class="visit-storefront">
+          <img src="public/storefront-photo.webp" alt="EXAMPLE KITCHEN storefront at Anytown Mall" loading="lazy" />
+          <p>★ stop by · say hi ★</p>
+        </div>
+        <div class="visit-mapcard">
+          <div class="visit-mapcard-head">
+            <strong>🗺️ Mall map</strong>
+            <span>LEVEL 1 · NEAR FOOD COURT</span>
+          </div>
+          <div class="visit-map">
+            <!-- Links to the full-resolution map so visitors can open it in a
+                 new tab and pinch-zoom past the card's intrinsic size (#208). -->
+            <a href="public/mall-map.webp" target="_blank" rel="noopener"
+               aria-label="Open the full-size Anytown Mall mall map in a new tab">
+              <img src="public/mall-map.webp" alt="Anytown Mall mall map with EXAMPLE KITCHEN location marked" loading="lazy" />
+            </a>
+            <div class="visit-pin" aria-hidden="true"></div>
+            <div class="visit-pin-tag">You are here ↓</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     ORDER CTA
+     ============================================================ -->
+<section id="order" class="order-cta">
+  <div class="frame order-grid">
+    <div>
+      <h2 class="order-h">
+        Order from your phone.<br />
+        <span class="skip">Skip the line.</span>
+      </h2>
+      <p class="order-lead">
+        Scan, build your roll, pay — we&rsquo;ll text you when it&rsquo;s hitting the pan.
+        Pickup in 5–8 minutes.
+      </p>
+    </div>
+    <div class="order-side">
+      <a href="https://order.example.com/menu" class="btn btn-lg order-btn">
+        Start order
+        <svg width="18" height="18" aria-hidden="true" style="color:var(--ink)"><use href="#i-arrow"/></svg>
+      </a>
+      <a href="#menu" class="order-link">or browse the menu →</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============================================================
+     FOOTER
+     ============================================================ -->
+<footer class="site-foot">
+  <div class="frame">
+    <div class="foot-grid">
+      <div>
+        <a href="#top" class="foot-brand"><span class="rop">Example</span><span class="rollo">Kitchen</span></a>
+        <p class="foot-desc">
+          Hand-rolled ice cream, fresh-shaken bubble tea &amp; smoothies — made one cup
+          at a time at Anytown Mall.
+        </p>
+        <p class="foot-stamp">Anytown · Local · Since 2024</p>
+      </div>
+      <div class="foot-col">
+        <h4>Menu</h4>
+        <ul>
+          <li><a href="#menu">Rolled Ice Cream</a></li>
+          <li><a href="#menu">Bubble Tea</a></li>
+          <li><a href="#menu">Smoothies</a></li>
+          <li><a href="#sig">Signature Series</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <h4>Visit</h4>
+        <ul>
+          <li><a href="#visit">Hours &amp; Map</a></li>
+          <li><a href="mailto:hello@example.com?subject=Group%20order%20inquiry">Group orders</a></li>
+          <li><a href="mailto:hello@example.com?subject=Birthday%20party%20inquiry">Birthday parties</a></li>
+          <li><a href="#gift">Gift cards</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <h4>Stay in touch</h4>
+        <ul>
+          <li><span class="is-soon-link" aria-disabled="true">Instagram · soon</span></li>
+          <li><span class="is-soon-link" aria-disabled="true">TikTok · soon</span></li>
+          <li><a href="mailto:hello@example.com">hello@example.com</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bar">
+      <span>© 2026 EXAMPLE KITCHEN · Made in Anytown, ST ♥</span>
+      <span class="right">★ Fresh · Fun · Rolled ★</span>
+    </div>
+  </div>
+</footer>
+
+<script src="script.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+name: rop-crew
+
+services:
+  crew-web:
+    image: ghcr.io/example-org/rop-crew-web:main
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Infisical secret-zero (ADR-0020): the with-infisical entrypoint reads these
+      # and injects prod secrets at boot. crew-web historically shipped with NONE
+      # (it had no secrets — the crew session is opaque), but the AI invoice-scan
+      # (ADR-0538) needs INTERNAL_AI_TOKEN from Infisical, so it's wired in now like
+      # every other app. Empty default = no-op passthrough (dev uses with-secrets).
+      # Provided on the host via compose/crew.env; project/env(prod)/path(/) default.
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      # Same-origin BFF route handlers (app/api/**) proxy to inventory-api.
+      # Unset = falls back to http://localhost:4100 (dev only). Crew-web has
+      # no bearer/secret needs because it forwards the httpOnly crew cookie
+      # opaquely; the session HMAC lives only in inventory-api.
+      INVENTORY_API_BASE_URL: ${INVENTORY_API_BASE_URL:-http://inventory-api:4100}
+      # AI invoice-scan (ADR-0538): crew-web has no AI provider, so its
+      # /api/inventory/scan forwards the captured image to backoffice's
+      # /api/inventory/receipt-parse (DeepSeek vision) over the shared
+      # rop-net, authenticated with INTERNAL_AI_TOKEN. Both crew + backoffice
+      # pull the SAME token from Infisical prod:/ (via the secret-zero above), so
+      # they match automatically. Empty (no Infisical creds) = scan fails closed
+      # (503) in prod; the synthesize-from-catalog stub is dev-only.
+      INTERNAL_BACKOFFICE_URL: ${INTERNAL_BACKOFFICE_URL:-http://backoffice-web:3001}
+      INTERNAL_AI_TOKEN: ${INTERNAL_AI_TOKEN:-}
+      SENTRY_DSN: ${CREW_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    healthcheck:
+      # Next.js standalone listens on 3003 (set via ENV PORT in the Dockerfile).
+      # Root path renders the PIN-login screen, no DB calls — fast healthcheck.
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:3003/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - rop-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rop-net
+      - "traefik.http.routers.rop-crew.rule=Host(`crew.example.com`)"
+      - traefik.http.routers.rop-crew.entrypoints=websecure
+      - traefik.http.routers.rop-crew.tls=true
+      - traefik.http.routers.rop-crew.tls.certresolver=production
+      - traefik.http.routers.rop-crew.priority=100
+      - traefik.http.services.rop-crew.loadbalancer.server.port=3003
+
+networks:
+  rop-net:
+    external: true

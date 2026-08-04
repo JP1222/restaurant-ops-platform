@@ -1,0 +1,146 @@
+name: rop-inventory
+
+services:
+  postgres-inventory:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_inventory
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-inventory-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_inventory"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - rop-net
+
+  migrate:
+    image: ghcr.io/example-org/rop-inventory-api:main
+    # Force pull on every deploy so a new release's migrations are not skipped
+    # by a reused local :main tag (see kds.yml).
+    pull_policy: always
+    restart: "no"
+    environment:
+      INVENTORY_DATABASE_URL: ${INVENTORY_DATABASE_URL}
+    # pnpm deploy --prod --legacy keeps .bin symlinks at .pnpm/node_modules/.bin/
+    # rather than top-level node_modules/.bin/. Use the stable .pnpm path.
+    #
+    # Two steps, chained with &&: (1) apply schema migrations, then (2) idempotent
+    # self-heal of the two singleton config rows (ensure-singletons.sql, ON
+    # CONFLICT DO NOTHING). Without step 2 a fresh / reset inventory DB comes up
+    # schema-present but row-empty, and inventory-api 500s on the missing
+    # waste_settings/metrics singleton — the never-seeded-DB outage (ADR-0028
+    # follow-up). `prisma db execute` reads the datasource URL from
+    # prisma.config.ts, so it needs --config (not --schema like migrate deploy).
+    # The ensure-singletons step is guarded by a file check so this compose is
+    # forward-compatible with an image built BEFORE ensure-singletons.sql shipped:
+    # if the file isn't in the image yet, migrate still succeeds (skips the
+    # self-heal) instead of failing the whole migrate and blocking api start. A
+    # real db-execute failure (file present) still fails loudly.
+    command:
+      - sh
+      - -c
+      - >-
+        node_modules/.pnpm/node_modules/.bin/prisma migrate deploy
+        --schema node_modules/@rop/db-inventory/prisma/schema.prisma
+        && if [ -f node_modules/@rop/db-inventory/prisma/ensure-singletons.sql ];
+        then node_modules/.pnpm/node_modules/.bin/prisma db execute
+        --config node_modules/@rop/db-inventory/prisma.config.ts
+        --file node_modules/@rop/db-inventory/prisma/ensure-singletons.sql;
+        else echo "ensure-singletons.sql not in image yet; skipping self-heal"; fi
+    depends_on:
+      postgres-inventory:
+        condition: service_healthy
+    networks:
+      - rop-net
+
+  inventory-api:
+    image: ghcr.io/example-org/rop-inventory-api:main
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      # Infisical secret-zero (ADR-0020): the with-infisical entrypoint reads
+      # this and injects prod secrets at boot. Empty default = no-op passthrough
+      # (the env vars below are used as-is) until the token is set in Infisical (prod).
+      # Project/env(prod)/path(/) use the defaults baked into with-infisical.sh.
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      INVENTORY_API_PORT: 4100
+      INVENTORY_DATABASE_URL: ${INVENTORY_DATABASE_URL}
+      # Trusted server-to-server writes (backoffice BFF). Required in production;
+      # if unset the API refuses writes (fails closed). Crew PIN auth: Phase 5.
+      INVENTORY_INTERNAL_TOKEN: ${INVENTORY_INTERNAL_TOKEN:-}
+      # Crew session HMAC + PIN lookup pepper. Required in production — unset
+      # makes PIN login + session validation undefined and the API fails closed.
+      # CREW_PIN_PEPPER must match what seeded the pin_lookup index in the DB;
+      # rotating it requires re-seeding all crew employees.
+      CREW_SESSION_SECRET: ${CREW_SESSION_SECRET:-}
+      CREW_PIN_PEPPER: ${CREW_PIN_PEPPER:-}
+      BACKOFFICE_BASE_URL: ${BACKOFFICE_BASE_URL:-https://backoffice.example.com}
+      CREW_BASE_URL: ${CREW_BASE_URL:-https://crew.example.com}
+      # Sales-driven depletion (ADR-0028 / Iron Law 5): the "Sync sales" trigger
+      # polls analytics-api's read-only sold-items feed over HTTP (never its DB).
+      # The internal URL resolves via rop-net bridge DNS (service name in
+      # the analytics stack); same default backoffice.yml uses. The two secrets
+      # are the SAME values analytics-api validates against (ADMIN_TOKEN) and
+      # the merchant scope (CLOVER_MERCHANT_ID) — Layer-1 secrets injected by the
+      # with-infisical entrypoint in prod, empty-default passthrough otherwise.
+      # All three optional in config.ts; sync reports "not configured" if unset.
+      INTERNAL_ANALYTICS_API_URL: ${INTERNAL_ANALYTICS_API_URL:-http://analytics-api:3100}
+      ANALYTICS_ADMIN_TOKEN: ${ANALYTICS_ADMIN_TOKEN:-}
+      CLOVER_MERCHANT_ID: ${CLOVER_MERCHANT_ID:-}
+      # Cloudflare R2 (object storage) for archived receipt images (receipt-archive).
+      # All optional + empty-default passthrough (config.ts): unset => image archiving is
+      # skipped and a receive still succeeds. App-runtime S3 creds (Infisical prod /),
+      # SEPARATE from the host backup's rclone-shaped RCLONE_CONFIG_R2_* at /backup —
+      # use a token scoped to the receipts bucket, not the backups one.
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      RECEIPT_R2_BUCKET: ${RECEIPT_R2_BUCKET:-}
+      R2_REGION: ${R2_REGION:-auto}
+      # Open Food Facts barcode lookup for scan-to-register auto-fill (barcode-onboarding ADR D3).
+      # The API calls the free OFF public API (config.ts defaults to world.openfoodfacts.org), so
+      # nothing is needed on a fresh host. Empty-default passthrough — set OFF_API_BASE_URL only to
+      # point at a mirror / mock; the lookup fails open, so an unreachable OFF just opens a blank
+      # review form.
+      OFF_API_BASE_URL: ${OFF_API_BASE_URL:-}
+      # Operator notifications (Phase 5): inventory emits an 86 to notifications-api's
+      # ingest endpoint over rop-net. OPT-IN — both empty by default, so the
+      # emitter no-ops (the 86 still succeeds) until the owner wires it. To turn the
+      # 86 producer on: set INTERNAL_NOTIFICATIONS_API_URL=http://notifications-api:4400
+      # and a NOTIFICATIONS_INTERNAL_TOKEN matching notifications.yml (min 16 chars).
+      INTERNAL_NOTIFICATIONS_API_URL: ${INTERNAL_NOTIFICATIONS_API_URL:-}
+      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:4100/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - rop-net
+    # No Traefik labels: inventory-api is INTERNAL-ONLY. crew-web and backoffice-web
+    # reach it over the rop-net bridge (http://inventory-api:4100); nothing
+    # external consumes it. Having no Traefik router IS the surface closure — even
+    # though inventory.example.com resolves (via the zone's `*.example.com`
+    # wildcard, NOT a per-host record), Traefik has no rule for that host, so a
+    # request to it 404s instead of reaching POST /api/crew/login. There is no
+    # inventory-specific DNS record to delete: the wildcard serves every suite
+    # subdomain (crew/order/backoffice/www/…), so it must stay.
+
+volumes:
+  postgres-inventory-data:
+
+networks:
+  rop-net:
+    external: true

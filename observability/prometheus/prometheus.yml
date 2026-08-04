@@ -1,0 +1,140 @@
+# Prometheus scrape config. Mounted read-only into the prom/prometheus container.
+# After editing, hit POST http://prometheus:9090/-/reload from inside the
+# observability network OR run `docker compose restart prometheus`.
+
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    deployment: rop-oracle
+
+# Alerting / recording rules. The rules/ directory is mounted read-only into the
+# container alongside this file (docker-compose.observability.yml). Firing alerts
+# are pushed to Alertmanager (below), which fans them to Slack; they also surface
+# in Prometheus /alerts and as the ALERTS series in Grafana.
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Alertmanager (docker-compose.observability.yml) — on the shared observability
+# network, resolved by Docker DNS. It routes every firing rule to Slack via the
+# host SLACK_WEBHOOK_URL. If Alertmanager is down, Prometheus keeps evaluating
+# rules and retries delivery; alerts still show in /alerts + Grafana.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  # Prometheus's own metrics — useful for "is the scraper itself healthy".
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # KDS API. Prometheus is on the kds-internal network and resolves the
+  # `kds-api` service name to the container. Port 4000 is the Fastify
+  # internal port (the only port the stack exposes — container
+  # healthcheck + Traefik target both = 4000).
+  - job_name: kds-api
+    metrics_path: /api/internal/metrics
+    static_configs:
+      - targets: ["kds-api:4000"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: kds-api
+
+  # KDS worker (kds-worker) is intentionally NOT scraped: worker.ts runs no HTTP
+  # server, so it exposes no /metrics or /health port. The compose project runs
+  # ONE worker (an earlier comment here claimed two — that drift also
+  # desensitized the Mac-Mini heartbeat, which expected 2). Worker liveness /
+  # crash-loop detection is covered by the host cron container-liveness check in
+  # scripts/check-business-health.sh (docker inspect of the kds-worker
+  # container); a missing-secret / bad-image crash also takes kds-api (same image
+  # + boot path), which the TargetDown rule already covers. A small worker
+  # /health listener + scrape target is a deferred nice-to-have (in-process
+  # heap / event-loop metrics) — not needed for the liveness signal.
+
+  # Analytics API. Internal port 3100 per docker-compose.analytics.yml.
+  # Exposes prom-client default process/Node metrics at /metrics, served off the
+  # same health server as /healthz (src/http/metrics.ts). No domain counters
+  # yet — the target is a liveness + resource feed (CPU, heap, event-loop lag,
+  # process_start_time for restart detection).
+  - job_name: analytics-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["analytics-api:3100"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: analytics-api
+
+  # Postgres exporters — one container per DB (see docker-compose.observability.yml
+  # x-postgres-exporter). Each exposes pg_up + the pg_stat_* family on :9187.
+  # Prometheus resolves the exporter service names over rop-net. The DB a
+  # given exporter watches is fixed by its DATA_SOURCE_NAME, so `instance` is
+  # relabelled to the DB host it monitors, not the exporter container.
+  - job_name: postgres-kds
+    static_configs:
+      - targets: ["postgres-exporter-kds:9187"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: postgres-kds
+
+  - job_name: postgres-analytics
+    static_configs:
+      - targets: ["postgres-exporter-analytics:9187"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: postgres-analytics
+
+  - job_name: postgres-inventory
+    static_configs:
+      - targets: ["postgres-exporter-inventory:9187"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: postgres-inventory
+
+  # Redis exporter — points at the shared KDS Redis (redis-kds:6379). Exposes
+  # redis_up + redis_* on :9121.
+  - job_name: redis-kds
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: redis-kds
+
+  # Node exporter — host CPU / memory / disk / load on :9100. Reachable over the
+  # observability network (no app-network membership needed).
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: oracle-host
+
+  # cAdvisor — per-container CPU/memory on :8080. Added after the 2026-06-30
+  # host freeze, where node-exporter's host-aggregate metrics couldn't say
+  # which container was responsible for the spike. This host's Docker uses
+  # the containerd image store, which cAdvisor's docker handler can't read
+  # (see the pinned-version comment in docker-compose.observability.yml) —
+  # so containers carry no `name`/`image` label here. Query
+  # container_memory_working_set_bytes (NOT container_memory_usage_bytes —
+  # on cgroup v2 that includes reclaimable page cache and wildly overstates
+  # DB-heavy containers; working_set is what actually matters under
+  # pressure) / container_cpu_usage_seconds_total, filtered by
+  # `id=~"/system.slice/docker-.+[.]scope"`, to find the heaviest container
+  # during an incident window, then resolve `id`'s hash to a name with
+  # `docker inspect <id> --format '{{.Name}}'` on the host.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: oracle-host

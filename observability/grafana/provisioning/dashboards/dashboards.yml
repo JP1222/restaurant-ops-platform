@@ -1,0 +1,21 @@
+# Grafana dashboard provider. Loads the curated Example Kitchen ops boards from the
+# JSON files in this directory at startup (and re-reads them every 30s). The
+# /ops "Open in Grafana" deep-links (GRAFANA_TAB_PATH in
+# apps/backoffice-web/components/ops/ops-page-client.tsx) point at these boards
+# by their stable uids (yr-sync / yr-jobs / yr-webhooks / yr-database).
+#
+# Grafana reads *.json here as dashboards and this *.yml as the provider config,
+# so keeping both in one directory is fine.
+apiVersion: 1
+
+providers:
+  - name: restaurant-ops-platform
+    orgId: 1
+    folder: Example Kitchen
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

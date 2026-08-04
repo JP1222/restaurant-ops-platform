@@ -1,0 +1,24 @@
+{
+  "//": "Read-only Grafana MCP server for AI coding agents (Claude Code reads .mcp.json; Codex CLI uses its own ~/.codex config with the same command/env). It lets an agent query Loki (LogQL) and Prometheus (PromQL) and read dashboards through the already-public Grafana at metrics.example.com — so the internal Loki/Prometheus stay unexposed. SETUP: (1) In Grafana > Administration > Users and access > Service accounts, create a service account with the **Viewer** role only, then add a token. (2) Copy the `grafana` block into your real .mcp.json and set GRAFANA_SERVICE_ACCOUNT_TOKEN from your shell/keychain (or Infisical) — do NOT commit it (.mcp.json is gitignored). (3) Requires Docker. `--disable-write` keeps the server read-only as defense-in-depth even if the token were ever over-scoped. See docs/audits/2026-06-16-ai-friendly-architecture-benchmark.md §3.1.",
+  "mcpServers": {
+    "grafana": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "GRAFANA_URL=https://metrics.example.com",
+        "-e",
+        "GRAFANA_SERVICE_ACCOUNT_TOKEN",
+        "grafana/mcp-grafana",
+        "-t",
+        "stdio",
+        "--disable-write"
+      ],
+      "env": {
+        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}"
+      }
+    }
+  }
+}

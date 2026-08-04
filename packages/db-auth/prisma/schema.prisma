@@ -1,0 +1,89 @@
+generator client {
+  provider      = "prisma-client-js"
+  // Generate into a package-local path (not the workspace-hoisted
+  // node_modules/@prisma/client) so this client's generated types don't
+  // collide with db-kds. See ADR-0015.
+  output        = "./generated/client"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-arm64-openssl-1.1.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum WebAdminRole {
+  OWNER
+  MANAGER
+  // Deprecated (ADR-0029): existing rows migrate to OWNER. Retained as a valid
+  // enum value until a later enum-cleanup migration drops it.
+  ADMIN
+}
+
+model WebAdminAccount {
+  id           String              @id @default(cuid())
+  username     String              @unique
+  displayName  String
+  role         WebAdminRole        @default(OWNER)
+  passwordHash String
+  // NULL = the creation placeholder password that can never be logged in with
+  // (a never-redeemed account). Set to a timestamp the moment a real password
+  // is established/changed. Used by countUsableLoginMethods to detect whether
+  // an account has a usable password vs. only passkeys. See ADR-0029.
+  passwordSetAt DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  credentials  WebAuthnCredential[]
+  memberships  TenantMembership[]
+
+  @@map("web_admin_accounts")
+}
+
+// Multi-tenant (Phase 2, ADR-0818): which tenant(s) an admin account belongs to,
+// and its role within each. This is the *tenant* axis of access — orthogonal to
+// the *location* axis (within a tenant, an owner sees every Location; the earlier
+// "no per-account membership table" decision was about that location axis, not
+// this one). `tenantId` is a BARE, un-FK'd string: db-auth does not own the
+// Tenant table (it lives in db-kds; Iron Law 1), mirroring how db-crm /
+// db-inventory carry `tenant_id`. Still an auth-identity table (account ↔ tenant
+// ↔ role), so it belongs to this package's boundary (ADR-0015 + ADR-0029 RBAC).
+//
+// ADDITIVE / zero-behavior in this step: every existing account is backfilled to
+// one membership of the single implicit tenant (`tenant-default`) carrying its
+// current `WebAdminAccount.role`. NOTHING reads memberships yet — the cookie
+// session still derives access exactly as today. The session-claim rewrite that
+// *consumes* this (fail-closed, membership-validated; kills the env-default
+// fallback) is the next Phase-2 step and lands behind a flag + dual-read.
+// `WebAdminAccount.role` is intentionally left in place as the live source of
+// truth until that cutover (removing it would be behavior-changing, not additive).
+model TenantMembership {
+  id        String          @id @default(cuid())
+  accountId String
+  tenantId  String
+  role      WebAdminRole    @default(OWNER)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  account   WebAdminAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, tenantId])
+  @@index([tenantId])
+  @@map("tenant_memberships")
+}
+
+model WebAuthnCredential {
+  id            String          @id @default(cuid())
+  accountId     String
+  credentialId  String          @unique
+  webauthnUserId String
+  publicKey     Bytes
+  counter       Int             @default(0)
+  deviceType    String
+  backedUp      Boolean         @default(false)
+  transports    Json?
+  lastUsedAt    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  account       WebAdminAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@map("web_authn_credentials")
+}

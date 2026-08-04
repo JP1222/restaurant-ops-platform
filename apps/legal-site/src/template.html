@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{TITLE}}</title>
+  <meta name="description" content="{{DESCRIPTION}}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="{{CANONICAL_URL}}">
+  <meta property="og:title" content="{{TITLE}}">
+  <meta property="og:description" content="{{DESCRIPTION}}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{CANONICAL_URL}}">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <header class="site-nav">
+    <a href="/" class="brand">Example Kitchen · Legal</a>
+    <nav>
+      <a href="/eula" class="{{NAV_EULA_CLASS}}"{{NAV_EULA_CURRENT}}>EULA</a>
+      <a href="/privacy" class="{{NAV_PRIVACY_CLASS}}"{{NAV_PRIVACY_CURRENT}}>Privacy</a>
+      <a href="/support" class="{{NAV_SUPPORT_CLASS}}"{{NAV_SUPPORT_CURRENT}}>Support</a>
+    </nav>
+  </header>
+  <main id="main-content" tabindex="-1">
+    <article class="prose">
+{{CONTENT}}
+    </article>
+  </main>
+  <footer>
+    <p>© 2026 Example Owner · d/b/a Example Kitchen · Anytown, ST, United States · Last updated {{LAST_UPDATED}}</p>
+    <p><a href="/eula">EULA</a> · <a href="/privacy">Privacy Policy</a> · <a href="/support">Support</a> · <a href="mailto:support@example.com">support@example.com</a></p>
+  </footer>
+</body>
+</html>

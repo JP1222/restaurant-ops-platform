@@ -1,0 +1,39 @@
+# Alert rule for the kds-api dead-letter queue (GH #124).
+#
+# Loaded via `rule_files: /etc/prometheus/rules/*.yml` in prometheus.yml (the
+# glob auto-picks this up) and mounted read-only into the prom/prometheus
+# container. Edit then POST http://prometheus:9090/-/reload from inside the
+# observability network or `docker compose restart prometheus`.
+#
+# Same no-Alertmanager model as the other rule files — alerts surface in
+# Prometheus /alerts and the ALERTS{...} series in Grafana.
+#
+# Metric: kds_dlq_size{job_type} = current UNRESOLVED dead-letter rows per job
+# type, set on every scrape from deadLetterJob.groupBy(where resolvedAt IS NULL)
+# in apps/kds-api/src/routes/metrics.ts. The route reset()s the gauge before
+# re-setting, so a job_type whose dead-letters were all resolved drops to absent
+# (the alert clears) rather than pinning at a stale value.
+groups:
+  - name: kds-dead-letter-queue
+    rules:
+      # A job type accumulating unresolved dead-letters means terminally-failed
+      # sync/fulfillment jobs are piling up with no automatic redelivery — orders
+      # can be silently stuck. >10 held for 5m rides out a transient blip while
+      # still paging well before a large backlog. Until the replay tooling lands
+      # (the rest of #124, needs an ADR), recovery is manual: inspect the
+      # dead_letter_jobs table for this job_type and re-drive or resolve them.
+      - alert: KdsDeadLetterQueueGrowing
+        expr: kds_dlq_size > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: kds-api
+          component: dead-letter-queue
+        annotations:
+          summary: "kds-api dead-letter queue growing for job_type {{ $labels.job_type }}"
+          description: >-
+            {{ $value }} unresolved dead-letter rows for job_type
+            {{ $labels.job_type }} (>10 for 5m). Terminally-failed jobs are
+            accumulating with no automatic redelivery. Inspect dead_letter_jobs
+            WHERE job_type = '{{ $labels.job_type }}' AND resolved_at IS NULL and
+            re-drive or resolve them.

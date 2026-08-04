@@ -1,0 +1,70 @@
+# Clover webhook fan-out — Traefik dynamic configuration.
+#
+# Routes a single public URL to two backends, so Clover only needs one
+# webhook URL configured but both services receive every event:
+#
+#   Clover POST https://webhooks.example.com/clover
+#     │
+#     │  Traefik:
+#     │   1. matches Host + Path(/clover)
+#     │   2. middleware rewrites path → /webhooks/clover
+#     │   3. fans out via mirroring service
+#     │
+#     ├──► kds-api          (main: response returned to Clover)
+#     └──► analytics-api    (mirror: 100% async copy, response discarded)
+#
+# Why "main = kds-api":
+#   - KDS is the real-time path; if it fails, Clover should see 5xx and retry.
+#   - analytics-api can recover missed events via its own REST sync / dirty-window
+#     orchestrator. Missing a mirrored copy is non-fatal.
+#
+# Both backends MUST accept POST /webhooks/clover. analytics-api already does
+# (see apps/analytics-api/src/http/server.ts). kds-api accepts both the legacy
+# /api/clover/webhooks path AND this canonical alias (see apps/kds-api/src/routes/clover.ts).
+#
+# Mirror semantics (Traefik): fire-and-forget — main response is returned to
+# the client regardless of mirror success or failure. There is no retry queue.
+# For durability beyond that, replace this with a Redis-stream-backed fan-out
+# service (see HANDOFF-clover-webhook-fanout.md).
+#
+# Deploy:
+#   1. Copy this file into the Traefik instance's file-provider watch
+#      directory on the deployment host (commonly /etc/traefik/dynamic/).
+#   2. Confirm Traefik's static config has a file provider pointing at that
+#      directory with `watch: true` (so reload is automatic, no restart).
+#   3. Verify in Traefik dashboard / API that the router and 3 services appear
+#      under `http`.
+#
+# See infrastructure/traefik/README.md for the full deployment runbook.
+
+http:
+  routers:
+    rop-clover-webhook:
+      rule: "Host(`webhooks.example.com`) && Path(`/clover`)"
+      entryPoints:
+        - websecure
+      service: rop-clover-webhook-fanout
+      middlewares:
+        - rop-clover-webhook-rewrite
+      tls:
+        certResolver: production
+      priority: 100
+
+  middlewares:
+    rop-clover-webhook-rewrite:
+      replacePath:
+        path: "/webhooks/clover"
+
+  services:
+    rop-clover-webhook-fanout:
+      mirroring:
+        # Reference services that are auto-discovered by Traefik's Docker provider
+        # from container labels. The @docker suffix is required when crossing
+        # providers. Backend IPs and ports come from Docker container metadata,
+        # not from DNS — important because Traefik runs in host network mode and
+        # cannot resolve Docker container names via the host's resolver.
+        service: rop-kds-api@docker
+        # mirrorBody defaults to true — analytics-api needs the full POST body.
+        mirrors:
+          - name: rop-analytics@docker
+            percent: 100

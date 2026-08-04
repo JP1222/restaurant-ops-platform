@@ -1,0 +1,658 @@
+// Inventory persistence schema. Owns its own Postgres database (Iron Law 1).
+// Generated client uses a package-local output path so it never collides with
+// db-kds's client in the shared node_modules/@prisma/client location.
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../generated/client"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-arm64-openssl-1.1.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model InventoryCategory {
+  id        String          @id
+  name      String
+  color     String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  items     InventoryItem[]
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_categories")
+}
+
+model InventoryItem {
+  id                String               @id
+  sku               String               @unique
+  name              String
+  categoryId        String               @map("category")
+  unit              String
+  // The unit's KIND (ADR-0737 D1), so the UI renders correctly and "consume one pack"
+  // resolves to a concrete base quantity. `unit` is the stable BASE (stocking) unit; this
+  // says whether that base is a count ("each"), a weight ("oz"/"g"), or a volume ("ml").
+  // Default "count" = the implicit behavior every existing item already had.
+  unitKind          String               @default("count") @map("unit_kind")
+  onHand            Float                @map("on_hand")
+  parMin            Float                @map("par_min")
+  parMax            Float                @map("par_max")
+  // Per-usage cost is now Float: sub-cent precision (a cup is 5.2c, a napkin 0.6c).
+  // Derived = purchaseCostCents / packQty and kept in sync by the item editor.
+  costCents         Float                @map("cost_cents")
+  vendor            String
+  shelfDays         Int                  @map("shelf_days")
+  // Unit conversion (S3 / ADR-0028): bought by the purchaseUnit (a Case/Jug/etc.)
+  // at purchaseCostCents for packQty usage-units; usage cost derives from these.
+  purchaseUnit      String               @default("") @map("purchase_unit")
+  packQty           Float                @default(1) @map("pack_qty")
+  purchaseCostCents Int                  @default(0) @map("purchase_cost_cents")
+  // Opaque display date string (e.g. "2026-05-19") owned by the contract DTO,
+  // not a true timestamp — kept as String for exact contract fidelity.
+  lastCounted       String               @map("last_counted")
+  flagged86         Boolean              @default(false) @map("flagged_86")
+  // Operator-chosen emoji glyph for the item (Floor "edit item" + Backoffice).
+  // Catalog-level visual identity, a sibling to the optional photo (InventoryItemImage):
+  // both decorate the item, neither is client-only presentation state. A tiny string
+  // (one emoji), so it rides inline in the dataset DTO — display precedence is
+  // photo > icon > category fallback glyph. Default "" = no icon.
+  icon              String               @default("")
+  // Soft-delete (ADR catalog-management D1). NULL = active; a timestamp = archived
+  // (hidden from the active dataset, excluded from reorder/PO pick) but the row is
+  // RETAINED so recipe lines, PO/waste/movement history, and sales-sync depletion —
+  // all of which reference an item by loose `sku`/`item_id` string with no FK — stay
+  // intact. Never hard-delete: the DB would not block it and would silently orphan
+  // those references. Mirrors the crew soft-disable (`active=false`) pattern.
+  archivedAt        DateTime?            @map("archived_at")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  category          InventoryCategory    @relation(fields: [categoryId], references: [id])
+  states            InventoryItemState[]
+  image             InventoryItemImage?
+  aliases           InventoryItemAlias[]
+  packs             InventoryItemPack[]
+  barcodes          InventoryBarcode[]
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([categoryId])
+  @@map("inventory_items")
+}
+
+// A purchasable / countable PACKAGE shape for an item (ADR-0737 D2/D3). The item is stocked
+// in one stable BASE unit (InventoryItem.unit); a pack says "this box/bag = N base units"
+// via `baseQtyPerPack`, so the floor can receive/count in whatever it physically handles
+// while on_hand, par, cost, and the movement ledger stay in the base unit. A 3-level
+// case→bag→each is two rows (bag=50, case=500) with `containsLabel`/`containsQty` as a
+// display hint ("1 case = 10 bags") — deliberately FLAT-with-factors, not a recursive tree.
+// `vendor` (normalizeAlias key, "" = all vendors) lets the SAME item carry Vendor A's
+// "case = 500" and Vendor B's "case = 480" without duplicate items — the per-vendor pack
+// variance that a single global pack_qty couldn't express. The legacy purchase_unit/pack_qty
+// stays as the implicit default pack (and cost-derivation input); a migration backfills one
+// row here per item with pack_qty > 1, marked isPurchaseDefault. CASCADE like the sibling
+// item-child tables (state/image/alias): a hard item delete can't orphan a pack; the normal
+// path is a soft archive, which keeps the item row and its packs.
+model InventoryItemPack {
+  id                String        @id @default(cuid())
+  itemId            String        @map("item_id")
+  label             String
+  // How many BASE units one of this pack equals (8 oz bag = 8, a 500-cup case = 500). Float
+  // for the same reason on_hand/pack_qty are: fractional packs and sub-unit bases happen.
+  baseQtyPerPack    Float         @map("base_qty_per_pack")
+  vendor            String        @default("")
+  // Optional display hint for an intermediate level ("10 bags"); not used in the conversion
+  // math (baseQtyPerPack already collapses to the base), only shown so a case reads sensibly.
+  containsLabel     String        @default("") @map("contains_label")
+  containsQty       Float?        @map("contains_qty")
+  // Exactly one pack per item should be the default purchase pack (the receive prefill). Not a
+  // DB constraint (Postgres can't easily express "at most one true per item"); the API keeps it.
+  isPurchaseDefault Boolean       @default(false) @map("is_purchase_default")
+  sort              Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  item              InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  // A vendor can't define the same pack label twice for one item; different vendors (and the
+  // "" vendor-agnostic bucket) each get their own row, which is how per-vendor variance lands.
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@unique([itemId, vendor, label])
+  @@index([itemId])
+  @@map("inventory_item_packs")
+}
+
+// Barcode (UPC/GTIN) or printed internal code mapping to an item, optionally to a specific
+// pack (ADR-0737 D4). A 12 oz bag and an 8 oz bag are DIFFERENT UPCs, so each maps to its own
+// pack and a scan resolves to the EXACT base quantity. `packId` null = item-level code (resolve
+// to the item, let the operator pick the pack). `source` distinguishes a manufacturer UPC from
+// a code we printed ourselves (no-UPC / house-prepped items, shelf/bin tags). `code` is the PK:
+// one physical code maps to one (item, pack); the same item legitimately has many codes (one per
+// pack), which is the many-codes-to-one-item shape. Identity stays on InventoryItem.sku — this is
+// an additive lookup, never the primary key. CASCADE like the other item-child tables.
+model InventoryBarcode {
+  code      String        @id
+  itemId    String        @map("item_id")
+  packId    String?       @map("pack_id")
+  source    String        @default("manufacturer")
+  label     String        @default("")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([itemId])
+  @@map("inventory_barcodes")
+}
+
+// Effective-dated per-usage cost history (ADR-0573 follow-up). Append-only: every
+// change to InventoryItem.costCents adds a row, maintained by a DB trigger so every
+// cost-write path is captured without per-call-site code. The actual-COGS valuation
+// reads the cost effective at each count timestamp, so a later cost edit no longer
+// re-prices a CLOSED between-count window. id is DB-generated (identity) so the
+// trigger can INSERT without an app-side cuid. Read-only from the app.
+model InventoryItemCostHistory {
+  id            BigInt   @id @default(autoincrement())
+  itemId        String   @map("item_id")
+  costCents     Float    @map("cost_cents")
+  effectiveFrom DateTime @default(now()) @map("effective_from")
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([itemId, effectiveFrom])
+  @@map("inventory_item_cost_history")
+}
+
+// Learned vendor alias (ADR-0586, extends ADR-0538). Maps a vendor's PRINTED
+// invoice line text to the canonical InventoryItem it stands for, so a confirmed receive
+// teaches the scanner to auto-match the same product next time ("item matching memory")
+// instead of re-running a stateless fuzzy guess every invoice. One item accumulates many
+// aliases — one per vendor wording ("Member's Mark Milk 12 oz" from Sam's, another from
+// Sysco) — which is how the suite avoids the duplicate-SKU-per-vendor anti-pattern: the
+// quantity always lands on the one canonical item. `normalized` = normalizeAlias(raw) and
+// `vendor` = normalizeAlias(vendorName) ("" = vendor-agnostic); together unique, they are
+// the match key the inventory-api writes and both web matchers read (one shared
+// normalizeAlias in @rop/contracts, so the keys never drift). `raw` keeps the
+// original printed text (audit + a future price-comparison view), `brand`/`pack` hold the
+// model's optional structured extraction WITHOUT rewriting the clean canonical item name,
+// `lastCostCents` the most recent per-vendor price, `hits` an alias-trust signal. CASCADE
+// like the sibling item child tables (state/image): a (rare) hard item delete can't orphan
+// an alias; the normal path is a soft archive, which keeps the item row and its aliases.
+model InventoryItemAlias {
+  id            String        @id @default(cuid())
+  itemId        String        @map("item_id")
+  vendor        String        @default("")
+  // Display label for the vendor (the raw name as typed/printed, e.g. "Sam's Club"), kept
+  // alongside the normalized `vendor` match key so the per-vendor price view (ADR-0586
+  // Phase 2B) shows a legible name instead of the collapsed key ("samsclub").
+  vendorLabel   String        @default("") @map("vendor_label")
+  normalized    String
+  raw           String        @map("raw_description")
+  brand         String        @default("")
+  pack          String        @default("") @map("pack_descriptor")
+  // The specific pack (size) this learned wording maps to (ADR-882). When a confirmed receive
+  // booked the line into a known pack, store its id so the NEXT scan of this exact vendor wording
+  // auto-resolves to the right SIZE, not just the item. Nullable — legacy aliases and item-level
+  // (no-pack) lines have none. App-enforced like InventoryBarcode.packId (no FK relation).
+  packId        String?       @map("pack_id")
+  source        String        @default("receive")
+  // Per-vendor "last paid" per-usage cost. Float (like InventoryItem.costCents): a per-usage
+  // cost is sub-cent (a 6000-ct napkin case is 0.479c each), so whole-cent Int flattened it to 0.
+  lastCostCents Float?        @map("last_cost_cents")
+  hits          Int           @default(1)
+  lastSeenAt    DateTime      @default(now()) @map("last_seen_at")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  item          InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@unique([vendor, normalized])
+  @@index([itemId])
+  @@map("inventory_item_aliases")
+}
+
+// Item photo (floor "edit item" / backoffice). One optional row per item holding
+// the raw image bytes + content type. Stored in Postgres rather than object
+// storage: single-merchant, low volume (a few hundred items, one small resized
+// photo each), and the suite has no S3/R2 infra. Kept in its OWN table (not a
+// column on inventory_items) so the hot dataset query never loads image bytes —
+// the dataset only learns an item HAS a photo (the `has_image` flag), then the
+// browser fetches it lazily from GET /api/inventory/items/:id/image. ON DELETE
+// CASCADE so a (rare) hard item delete can't orphan a blob; normal removal is a
+// soft archive, which keeps the photo too.
+model InventoryItemImage {
+  itemId      String        @id @map("item_id")
+  contentType String        @map("content_type")
+  data        Bytes
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_item_images")
+}
+
+// Per-location stock state for a brand catalog item (ADR-0018, Phase 4 part 3).
+// The InventoryItem row is the shared brand catalog (name, unit, cost, and the
+// DEFAULT on_hand/par/last_counted/flagged_86); the LIVE per-store numbers live
+// here, keyed by (location, item). Non-destructive: the item's own state columns
+// are retained as the fallback for a location with no row yet, so single-store
+// reads/writes are unchanged. The API merges catalog + state back into the same
+// InventoryItem contract DTO, so this split does NOT touch @rop/contracts.
+model InventoryItemState {
+  locationId  String        @map("location_id")
+  itemId      String        @map("item_id")
+  onHand      Float         @map("on_hand")
+  parMin      Float         @map("par_min")
+  parMax      Float         @map("par_max")
+  lastCounted String        @map("last_counted")
+  flagged86   Boolean       @default(false) @map("flagged_86")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@id([locationId, itemId])
+  @@index([itemId])
+  @@map("inventory_item_state")
+}
+
+model InventoryRecipe {
+  id           String                    @id
+  name         String
+  category     String
+  sellCents    Int                       @map("sell_cents")
+  // Sales-derived figure; sourced from analytics-api once wired (Iron Law 5).
+  // Persisted here only so the API can return a complete dataset pre-integration.
+  soldToday    Int                       @default(0) @map("sold_today")
+  // Link to the Clover catalog item this recipe maps to (ADR-0028) — the join
+  // key for sales-driven depletion. db-internal (deliberately NOT in the
+  // InventoryDataset contract DTO, to avoid a contracts/iOS-Swift change); the
+  // depletion matcher reads it via Prisma. Nullable: demo/manual recipes have
+  // none and fall back to name matching. Unique = one recipe per Clover item.
+  cloverItemId String?                   @unique @map("clover_item_id")
+  // Square sibling of cloverItemId (store #2; docs/square-onboarding.md). The
+  // depletion join resolves a sold line by clover_item_id → square_catalog_object_id
+  // → name, so a Square store's sales deplete stock the same way. Holds the bare Square
+  // ITEM_VARIATION CatalogObject id — the id a Square order line references and the one
+  // the sold-items feed carries (its wire field is `square_catalog_item_id`); named
+  // "object" not "item" because orders reference the variation, not the parent item
+  // (the item-vs-variation distinction that the value MUST honor). Synced rows namespace
+  // the recipe `id` as `square:{id}` to never collide with a Clover recipe id. Nullable +
+  // unique, exactly like cloverItemId.
+  squareCatalogObjectId String?          @unique @map("square_catalog_object_id")
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  lines        InventoryRecipeLine[]
+  modifiers    InventoryRecipeModifier[]
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_recipes")
+}
+
+model InventoryRecipeLine {
+  id       String          @id @default(cuid())
+  recipeId String          @map("recipe_id")
+  sku      String
+  qty      Float
+  recipe   InventoryRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([recipeId])
+  @@map("inventory_recipe_lines")
+}
+
+// Per-modifier consumption (ADR-0028 / recipe editor S1). A Clover modifier OPTION
+// (e.g. "Extra Boba", "Large") that additionally draws from — or, with a NEGATIVE
+// qtyDelta, credits back (e.g. "No Boba" = -2 oz tapioca) — stock on top of the
+// base recipe at point of sale. Keyed by (recipe, group, option, sku). A modifier
+// group with NO rows here has no inventory impact (Sweetness, Ice). Cascades with
+// the recipe, same as InventoryRecipeLine.
+model InventoryRecipeModifier {
+  id         String          @id @default(cuid())
+  recipeId   String          @map("recipe_id")
+  groupName  String          @map("group_name")
+  optionName String          @map("option_name")
+  sku        String
+  qtyDelta   Float           @map("qty_delta")
+  recipe     InventoryRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([recipeId])
+  @@map("inventory_recipe_modifiers")
+}
+
+model InventoryVendor {
+  id             String   @id
+  name           String
+  type           String
+  contact        String
+  phone          String
+  email          String
+  account        String
+  terms          String
+  minOrderCents  Int      @map("min_order_cents")
+  cutoff         String
+  deliveryDays   String[] @map("delivery_days")
+  categories     String[]
+  fillRate       Float    @map("fill_rate")
+  onTime         Float    @map("on_time")
+  priceStability Float    @map("price_stability")
+  credits90d     Int      @map("credits_90d")
+  spend30d       Int      @map("spend_30d")
+  trend4w        Int[]    @map("trend_4w")
+  preferred      Boolean  @default(false)
+  tags           String[]
+  // Soft-delete (ADR catalog-management D2), same pattern as InventoryItem: a vendor
+  // is referenced by name string from items/POs and by id from quotes (no FK), so it
+  // is archived, never hard-deleted. NULL = active; a timestamp = archived.
+  archivedAt     DateTime? @map("archived_at")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_vendors")
+}
+
+model InventoryVendorQuote {
+  id       String  @id @default(cuid())
+  sku      String
+  vendorId String  @map("vendor_id")
+  cents    Int
+  primary  Boolean @default(false)
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([sku])
+  @@map("inventory_vendor_quotes")
+}
+
+model InventoryPurchaseOrder {
+  id         String            @id
+  locationId String            @default("default-location") @map("location_id")
+  vendor     String
+  placed     String
+  expected   String
+  lines      Int
+  status     String
+  totalCents Int               @map("total_cents")
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  lineItems  InventoryPoLine[]
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([locationId])
+  @@map("inventory_purchase_orders")
+}
+
+// Line-level PO detail for the floor receive flow. `sku` carries the item id
+// (matching the rest of the inventory store's id-keyed lookups). qtyReceived is
+// set when the floor receives the line.
+model InventoryPoLine {
+  id            String                 @id @default(cuid())
+  locationId    String                 @default("default-location") @map("location_id")
+  poId          String                 @map("po_id")
+  sku           String
+  qtyOrdered    Float                  @map("qty_ordered")
+  qtyReceived   Float                  @default(0) @map("qty_received")
+  // Per usage-unit, may be sub-cent (Float like InventoryItem.costCents). Persisted
+  // so the PO edit flow shows the agreed price, not today's catalog cost. null =
+  // line predates the column.
+  unitCostCents Float?                 @map("unit_cost_cents")
+  po            InventoryPurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([poId])
+  @@index([locationId])
+  @@map("inventory_po_lines")
+}
+
+model InventoryCountRecord {
+  id            String   @id
+  locationId    String   @default("default-location") @map("location_id")
+  date          String
+  who           String
+  scope         String
+  items         Int
+  variancePct   Float?   @map("variance_pct")
+  varianceCents Int?     @map("variance_cents")
+  status        String
+  createdAt     DateTime @default(now())
+  // Idempotency key for the originating count submission (see InventoryWasteEntry).
+  // A replayed count carrying the same key is a no-op. Nullable + location-scoped
+  // unique so legacy / keyless rows carry NULL (Postgres treats NULLs as distinct).
+  idempotencyKey String?  @map("idempotency_key")
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@unique([locationId, idempotencyKey])
+  @@index([locationId])
+  @@map("inventory_count_records")
+}
+
+model InventoryWasteReason {
+  id                  String @id
+  label               String
+  color               String
+  needsPhotoOverCents Int    @map("needs_photo_over_cents")
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_waste_reasons")
+}
+
+model InventoryWasteEntry {
+  id         String   @id @default(cuid())
+  locationId String   @default("default-location") @map("location_id")
+  at         String
+  who        String
+  sku        String
+  qty        Float
+  reason     String
+  notes      String
+  photo      Boolean  @default(false)
+  approved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  // Client-supplied idempotency key for the originating user action: a replayed
+  // waste submission with the same key is a no-op (recordWaste short-circuits and
+  // returns the prior entry; the unique index is the DB backstop against races).
+  // Nullable + location-scoped unique so legacy / keyless writes carry NULL
+  // (Postgres treats NULLs as distinct, so they never collide).
+  idempotencyKey String?  @map("idempotency_key")
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@unique([locationId, idempotencyKey])
+  @@index([sku])
+  @@index([locationId])
+  @@map("inventory_waste_entries")
+}
+
+model InventoryActivityEntry {
+  id         String   @id @default(cuid())
+  locationId String   @default("default-location") @map("location_id")
+  at         String
+  who        String
+  action     String
+  what       String
+  note       String
+  createdAt  DateTime @default(now())
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([locationId])
+  @@map("inventory_activity_entries")
+}
+
+// Single-row config table; id pinned to "singleton".
+model InventoryWasteSettings {
+  id                       String @id @default("singleton")
+  photoRequiredOverCents   Int    @map("photo_required_over_cents")
+  managerApprovalOverCents Int    @map("manager_approval_over_cents")
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_waste_settings")
+}
+
+// Manager-tunable floor-auth security settings (no redeploy). Singleton, like the
+// waste settings. Today just the crew login IP allowlist (free-text IPs / IPv4
+// CIDRs; empty = allow all). Defaults so a never-written DB reads as allow-all and
+// the store never need a seed row.
+model InventorySecuritySetting {
+  id              String   @id @default("singleton")
+  crewIpAllowlist String   @default("") @map("crew_ip_allowlist")
+  updatedAt       DateTime @updatedAt
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_security_settings")
+}
+
+// Single-row roll-up of sales/COGS trends. Placeholder until analytics-api is
+// the source (Iron Law 5: read-only OLAP owns sales aggregates).
+// Single config row. The former cogs_trend / net_sales_trend columns held seeded
+// COGS / net-sales *measurements* — those are analytics-owned (Iron Law 5) and now
+// read live from analytics-api, so they were dropped (ADR-0573). Only the food-cost
+// target benchmark (config) remains here.
+model InventoryMetrics {
+  id            String @id @default("singleton")
+  cogsTargetPct Float  @map("cogs_target_pct")
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_metrics")
+}
+
+// Floor crew for PIN login (apps/crew-web -> inventory-api). PIN is never stored
+// in plaintext: pinHash is argon2, pinLookup is a keyed HMAC index used to find
+// the employee for a PIN-only login before the argon2 verify. pinLookup is unique
+// so two employees cannot share a PIN (PIN-only login can't disambiguate).
+model InventoryEmployee {
+  id         String   @id
+  locationId String   @default("default-location") @map("location_id")
+  name       String
+  role       String
+  shift      String
+  initials   String
+  color      String
+  pinHash    String   @map("pin_hash")
+  pinLookup  String   @unique @map("pin_lookup")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@index([locationId])
+  @@map("inventory_employees")
+}
+
+// Append-only stock-movement ledger (ADR-0028). Every change to on-hand stock is
+// a signed delta tagged with a reason and an optional source_ref (the Clover
+// line-item id for a sale, or the count/waste/PO record id for a manual flow).
+// on_hand is the projection `opening + Σ delta`, mirroring the append-only
+// loyalty ledger (ADR-0022). Phase 1 records movements alongside the existing
+// on_hand writes (dual-write); a later phase makes on_hand a pure projection and
+// adds Clover-sale-driven depletion. No FK to inventory_items (audit rows outlive
+// catalog edits), matching inventory_waste_entries / inventory_activity_entries.
+model InventoryStockMovement {
+  id         String   @id @default(cuid())
+  locationId String   @default("default-location") @map("location_id")
+  itemId     String   @map("item_id")
+  delta      Float
+  reason     String
+  sourceRef  String?  @map("source_ref")
+  actor      String
+  createdAt  DateTime @default(now())
+
+  // Idempotency (ADR-0028 + ADR-0018 Phase 4): a given source event applied to a
+  // given item *at a given location* is recorded at most once. One source_ref fans
+  // out to many items (a count touches many SKUs; a sold menu item depletes many
+  // components), so item_id is part of the key. location_id is part of the key
+  // because the sales feed is merchant-wide: the same Clover line item legitimately
+  // depletes each store independently, so two locations must be able to hold the
+  // same (reason, source_ref, item_id) without colliding. NULL source_ref (ad-hoc
+  // `manual` adjustments) is exempt — Postgres treats NULLs as distinct, so manual
+  // rows are never deduped.
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@unique([locationId, reason, sourceRef, itemId])
+  @@index([locationId, itemId])
+  @@index([sourceRef])
+  @@map("inventory_stock_movements")
+}
+
+// Archived receipt/invoice scan (receipt-archive). One row per CONFIRMED ad-hoc
+// receive that carried a scanned image: the original invoice photo + an immutable
+// snapshot of the lines the operator confirmed, so a manager can later open
+// "what did Tuesday's Sam's delivery actually look like" and see both the picture
+// and the logged quantities/costs. `ref` is the receive's idempotency anchor — the
+// SAME value that fans out into inventory_stock_movements.source_ref as
+// `adhoc:<ref>:<i>` — so this archive row and the stock movements it explains share
+// one key. Keyed (location, ref) unique, which makes a replayed receive a no-op
+// upsert here just as it is for the movements.
+//
+// Unlike inventory_item_images (item photos → raw BYTEA in Postgres: bounded set,
+// one per item, replaced not appended), receipts are APPEND-ONLY and unbounded over
+// time, so the bytes live in Cloudflare R2 (object storage) and only the object KEY
+// is stored here. image_key is NULLABLE on purpose: archiving the image is
+// best-effort (a confirmed receive is more important than its photo), so an R2
+// upload failure still records the log row with image_key = NULL — an honest
+// "scanned, but the picture couldn't be stored" rather than losing the receive.
+// `lines` is a jsonb snapshot of the confirmed receive lines (raw description, qty,
+// unit, unit cost) — ad-hoc receives have no per-line table (only the per-item
+// movement ledger), so this is the faithful, frozen record of the receipt's content
+// at receive time. Location-scoped like the other operational tables. No FK to
+// items (audit rows outlive catalog edits, matching the movement/waste/activity ledgers).
+model InventoryReceiptScan {
+  id          String   @id @default(cuid())
+  locationId  String   @default("default-location") @map("location_id")
+  ref         String
+  vendor      String?
+  // Opaque "YYYY-MM-DD" the vision step read off the invoice (like lastCounted),
+  // NULL when the model couldn't find a date. Distinct from capturedAt (when we scanned).
+  invoiceDate String?  @map("invoice_date")
+  who         String
+  // R2 object key for the original image; NULL = no image stored (upload failed or
+  // R2 unconfigured). Bytes are served via GET /api/inventory/receipts/:id/image.
+  imageKey    String?  @map("image_key")
+  contentType String?  @map("content_type")
+  lineCount   Int      @map("line_count")
+  totalCents  Int      @map("total_cents")
+  lines       Json
+  capturedAt  DateTime @default(now()) @map("captured_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@unique([locationId, ref])
+  @@index([locationId, capturedAt])
+  @@map("inventory_receipt_scans")
+}
+
+// Labor-cost reference for analytics' prime-cost leg (ADR-0033, Phase 4b). This is
+// the WRITE-SOURCE that analytics-api ingests into mart.dim_labor_cost: analytics is
+// read-only OLAP and Backoffice cannot write its mart (Iron Law 5), so labor cost —
+// like plate cost (ADR-0031) — originates in a write service and is pulled over HTTP.
+// inventory-api is that service (ADR-0031 named db-inventory "one valid home"). The
+// row is effective-dated: a wage change opens a new (location, effective_from) row, so
+// the latest effective_from <= business_date wins and past prime cost stays
+// point-in-time correct. Location-scoped like the rest of inventory; the read endpoint
+// maps each location to the store's Clover merchant id (single-merchant today —
+// per-location merchant mapping is the multi-location follow-up). dailyLaborCostCents
+// is the all-in labor bill modeled per operating day (weekly bill / days open); Float,
+// sub-cent like costCents, so a weekly figure spread over days never truncates.
+// effectiveFrom is a bare "YYYY-MM-DD" string (opaque date, like lastCounted), directly
+// comparable to mart business_date once ingested.
+model InventoryLaborCost {
+  locationId          String   @default("default-location") @map("location_id")
+  effectiveFrom       String   @map("effective_from")
+  dailyLaborCostCents Float    @map("daily_labor_cost_cents")
+  currency            String   @default("USD")
+  note                String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@id([locationId, effectiveFrom])
+  @@index([locationId])
+  @@map("inventory_labor_costs")
+}
+
+// Watermark for the sales-depletion poll (ADR-0028). Singleton row holding the
+// opaque cursor returned by the sales source (the analytics line-item feed): the
+// poller reads it, fetches sold items after it, depletes their BOMs, then
+// advances it. The cursor's meaning is owned by the source, not interpreted here.
+model InventoryDepletionCursor {
+  id        String   @id @default("singleton")
+  cursor    String?
+  updatedAt DateTime @updatedAt
+
+  tenantId String? @map("tenant_id") // ADR-0818: denormalized cross-tenant scope; backfilled to the default tenant. RLS keys on it (#902 Phase 1b); index + unique-rework + NOT NULL in 1c.
+  @@map("inventory_depletion_cursor")
+}

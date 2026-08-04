@@ -1,0 +1,266 @@
+# Self-hosted observability stack for restaurant-ops-platform on Oracle.
+#
+# One surface exposed publicly via Traefik:
+#   - metrics.example.com     → Grafana
+#
+# App-side error tracking is Sentry SaaS (sentry.io), NOT self-hosted. The
+# former GlitchTip stack was removed 2026-05-28 (see ADR-0014). Prometheus +
+# Loki run inside the observability network only (no public route). Prometheus
+# is also joined to the flat app network (rop-net, ADR-0527) so it can
+# scrape app metrics endpoints directly without exposing them publicly.
+#
+# Deploy manually on Oracle (no CI workflow — standalone plain docker compose
+# stack, separate from the app stacks under compose/):
+#   COMPOSE_PROJECT_NAME=rop-observability \
+#     docker compose --env-file .env.observability \
+#     -f docker-compose.observability.yml up -d --build
+#
+# Required in .env.observability (NOT committed — host-local secrets):
+#   GRAFANA_ADMIN_PASSWORD             Grafana admin password.
+#   POSTGRES_KDS_EXPORTER_DSN          libpq DSN for the postgres-kds,
+#   POSTGRES_ANALYTICS_EXPORTER_DSN    postgres-analytics, and
+#   POSTGRES_INVENTORY_EXPORTER_DSN    postgres-inventory monitoring roles.
+# See observability/postgres-exporter/monitoring-role.sql for the read-only role
+# each DSN authenticates as.
+
+x-restart: &restart
+  restart: unless-stopped
+
+# postgres_exporter is wired one-container-per-database (vs. a single
+# multi-target exporter): one Prometheus job/instance per DB reads cleanest and
+# each container needs only its own read-only role. DATA_SOURCE_NAME is the
+# per-DB libpq DSN from .env.observability. On rop-net so it resolves the
+# postgres-* service names by Docker DNS.
+x-postgres-exporter: &postgres-exporter
+  image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+  restart: unless-stopped
+  networks: [rop-net]
+
+services:
+  # ========== Grafana: dashboards ==========
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    <<: *restart
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      GF_SERVER_ROOT_URL: https://metrics.example.com
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # SMTP off by default; alerts route to Slack via contact points (set up in UI).
+      GF_SMTP_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks: [observability, traefik]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-servicenet
+      - 'traefik.http.routers.rop-grafana.rule=Host(`metrics.example.com`)'
+      - traefik.http.routers.rop-grafana.entrypoints=websecure
+      - traefik.http.routers.rop-grafana.tls=true
+      - traefik.http.routers.rop-grafana.tls.certresolver=production
+      - traefik.http.services.rop-grafana.loadbalancer.server.port=3000
+
+  # ========== Prometheus: metric scraper ==========
+  # Joined to the flat app network (rop-net) so it can reach app
+  # metrics endpoints directly by service name. Not exposed to the public —
+  # Grafana proxies all queries through the internal observability network.
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    <<: *restart
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    networks:
+      - observability
+      - rop-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ========== Alertmanager: routes Prometheus alerts to Slack ==========
+  # The "first Alertmanager" (ADR-0034). Prometheus (prometheus.yml `alerting:`)
+  # pushes firing alerts here; this fans ALL rules (kds-dlq, clover-sync,
+  # analytics-sync, backfill, target-liveness) to Slack with native dedup /
+  # grouping / resolve. The Slack webhook is a host secret (SLACK_WEBHOOK_URL in
+  # .env.observability) written to /tmp/slack_url at boot so it never lands in the
+  # committed alertmanager.yml; `$$` escapes compose substitution so the
+  # container shell expands it. Reachable only on the internal observability
+  # network (not publicly routed).
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    <<: *restart
+    entrypoint:
+      - /bin/sh
+      - -c
+      - printf '%s' "$$SLACK_WEBHOOK_URL" > /tmp/slack_url && exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks: [observability]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9093/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ========== Loki: log aggregator ==========
+  loki:
+    image: grafana/loki:3.3.0
+    <<: *restart
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+    networks: [observability]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ========== Promtail: ships docker container logs to Loki ==========
+  promtail:
+    image: grafana/promtail:3.3.0
+    <<: *restart
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./observability/promtail/config.yml:/etc/promtail/config.yml:ro
+      # Mount the docker socket + container logs directory so promtail can
+      # discover rop-* containers and tail their stdout/stderr.
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [observability]
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  # ========== Exporters: app datastore + host metrics for Prometheus ==========
+  # postgres_exporter — one per DB (anchored config above). Exposes pg_up plus
+  # the pg_stat_* family for the /ops Database tab's Grafana deep-link.
+  postgres-exporter-kds:
+    <<: *postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: ${POSTGRES_KDS_EXPORTER_DSN}
+
+  postgres-exporter-analytics:
+    <<: *postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: ${POSTGRES_ANALYTICS_EXPORTER_DSN}
+
+  postgres-exporter-inventory:
+    <<: *postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: ${POSTGRES_INVENTORY_EXPORTER_DSN}
+
+  # redis_exporter — shared KDS Redis (redis://redis-kds:6379, no auth per
+  # HANDOFF). The address is an internal DNS name, not a secret, so it's inline.
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    <<: *restart
+    environment:
+      REDIS_ADDR: redis://redis-kds:6379
+    networks: [rop-net]
+
+  # node_exporter — host CPU / memory / disk / load. Reads host /proc, /sys and
+  # rootfs read-only; needs no app-network access, so it sits on observability
+  # only (Prometheus is joined to both and scrapes it there).
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    <<: *restart
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      # Textfile collector: surfaces metrics written by host cron jobs (e.g.
+      # scripts/backup-postgres.sh writes backup.prom here). These appear under
+      # the existing `node` scrape job / oracle-host instance — no new Prometheus
+      # target needed. See OPERATIONS.md §8.
+      - '--collector.textfile.directory=/textfile'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      # Host dir where batch jobs drop *.prom files (read-only for the exporter).
+      - ./observability/textfile:/textfile:ro
+    networks: [observability]
+
+  # cadvisor — per-container CPU/memory/disk-IO metrics, added after the
+  # 2026-06-30 host freeze left no way to attribute the resource spike to a
+  # specific container (node-exporter is host-aggregate only). Deliberately
+  # NOT --privileged — read-only mounts are enough for container-level
+  # cpu/mem stats, which is all this needs.
+  #
+  # Pinned to v0.49.1 deliberately, NOT the latest release: this host's
+  # Docker uses the containerd image store (no classic
+  # /var/lib/docker/image/overlayfs/layerdb), which cAdvisor's docker
+  # container handler cannot read regardless of version — every version
+  # tested (v0.49.1, v0.52.1) fails the per-container disk-layer lookup.
+  # v0.52.1's docker handler claims each container by cgroup path *before*
+  # failing, so the container gets NO metrics at all. v0.49.1's docker
+  # handler instead fails its API-version check up front (its vendored
+  # client maxes at API 1.41; this host requires >=1.44) and never claims
+  # the containers, so cAdvisor's generic systemd-cgroup handler picks them
+  # up with full cpu/mem data intact — just without the docker `name`/
+  # `image` labels. Container identity is the cgroup id, e.g.
+  # `/system.slice/docker-<id>.scope`; map `<id>` to a friendly name with
+  # `docker inspect <id> --format '{{.Name}}'` (or `docker ps --no-trunc`)
+  # at investigation time.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    <<: *restart
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    networks: [observability]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  grafana-data:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+
+networks:
+  observability:
+  traefik:
+    external: true
+    name: traefik-servicenet
+  # The single flat app network (ADR-0527, 2026-06-04). Every Example Kitchen app
+  # stack single-homes here, so joining it lets Prometheus resolve app service
+  # names (kds-api, analytics-api, postgres-*, redis-kds) via Docker DNS and
+  # scrape their /metrics directly. This replaced the old per-project external
+  # networks (rop-kds_internal, rop-intelligence_intelligence),
+  # which no longer exist after the Dokploy/Swarm collapse — pinning them here
+  # made `docker compose up` fail to start the whole observability stack.
+  rop-net:
+    external: true

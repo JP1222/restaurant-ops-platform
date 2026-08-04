@@ -1,0 +1,78 @@
+# Alert rules for the analytics-api recurring sync jobs (GH #142).
+#
+# Loaded via `rule_files: /etc/prometheus/rules/*.yml` in prometheus.yml (the
+# glob auto-picks this up) and mounted read-only into the prom/prometheus
+# container. Edit then POST http://prometheus:9090/-/reload from inside the
+# observability network or `docker compose restart prometheus`.
+#
+# Same no-Alertmanager model as backfill.rules.yml — alerts surface in Prometheus
+# /alerts and the ALERTS{...} series in Grafana. This is the unattended page for
+# the failure the issue describes: a 3am hourly_rest_sweep / export_reconcile /
+# square_sweep failure that /readyz detects but nobody is told about.
+#
+# Metric: rop_sync_seconds_since_last_success{job_type,merchant_id}, populated
+# off the scrape path by SyncFreshnessUpdater (src/metrics/sync-freshness-*.ts).
+# The series is ABSENT until a job has completed at least once, so a fresh deploy
+# reads "no data" rather than false-firing. Per-job thresholds because the jobs
+# have different cadences (hourly vs daily).
+groups:
+  - name: analytics-sync-freshness
+    rules:
+      # hourly_rest_sweep runs once per hour (scheduler.ts hourlySweep). Two full
+      # hours with no successful completion means the hourly pipeline has stalled
+      # — new sales stop reaching the mart while every probe but /readyz stays
+      # quiet. `for: 15m` rides out a single late run.
+      - alert: AnalyticsHourlySweepStale
+        expr: rop_sync_seconds_since_last_success{job_type="hourly_rest_sweep"} > 2 * 3600
+        for: 15m
+        labels:
+          severity: warning
+          service: analytics-api
+          component: sync
+        annotations:
+          summary: "Hourly Clover sweep stale for merchant {{ $labels.merchant_id }}"
+          description: >-
+            hourly_rest_sweep last completed {{ $value | humanizeDuration }} ago
+            for merchant {{ $labels.merchant_id }} (expected hourly). New sales /
+            dimension changes are not reaching the mart. Check the analytics-api
+            scheduler + export runner and audit.sync_runs.error_message.
+
+      # square_sweep runs once per hour (scheduler.ts enqueueSquareSweep, same
+      # hourStart gate as hourly_rest_sweep) and is a Square store's ONLY ingest
+      # path — so a stalled square_sweep means that store's sales stop reaching
+      # the mart entirely. Same hourly threshold as hourly_rest_sweep. The series
+      # exists only for Square merchants (the updater GROUPs over real sync_runs),
+      # so this never fires for a Clover store.
+      - alert: AnalyticsSquareSweepStale
+        expr: rop_sync_seconds_since_last_success{job_type="square_sweep"} > 2 * 3600
+        for: 15m
+        labels:
+          severity: warning
+          service: analytics-api
+          component: sync
+        annotations:
+          summary: "Hourly Square sweep stale for merchant {{ $labels.merchant_id }}"
+          description: >-
+            square_sweep last completed {{ $value | humanizeDuration }} ago
+            for merchant {{ $labels.merchant_id }} (expected hourly). This is the
+            Square store's only ingest path — new sales are not reaching the mart.
+            Check the analytics-api scheduler + Square sweep runner and
+            audit.sync_runs.error_message.
+
+      # export_reconcile runs once per day (scheduler.ts, dedupeKey per day).
+      # 28h with no successful completion = a missed daily reconcile (gives a few
+      # hours of slack past 24h for export-window timing).
+      - alert: AnalyticsExportReconcileStale
+        expr: rop_sync_seconds_since_last_success{job_type="export_reconcile"} > 28 * 3600
+        for: 30m
+        labels:
+          severity: warning
+          service: analytics-api
+          component: sync
+        annotations:
+          summary: "Daily export reconcile stale for merchant {{ $labels.merchant_id }}"
+          description: >-
+            export_reconcile last completed {{ $value | humanizeDuration }} ago
+            for merchant {{ $labels.merchant_id }} (expected daily). Daily
+            raw-vs-mart reconciliation has not run. Check the analytics-api
+            scheduler + export window config and audit.sync_runs.error_message.
