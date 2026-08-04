@@ -1,0 +1,43 @@
+name: rop-order
+
+services:
+  order-web:
+    image: ghcr.io/example-org/rop-order-web:main
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      # order-web's BFF (app/api/order/*) forwards to kds-api's public /api/order
+      # routes (lib/server/order-api.ts; base defaults to localhost:4000 for dev).
+      # order-web + kds-api are SEPARATE compose stacks, so this targets the public
+      # kds host — Traefik routes Host(kds…) && PathPrefix(/api) → kds-api. Override
+      # if you ever want internal cross-stack routing instead.
+      ORDER_API_BASE_URL: ${ORDER_API_BASE_URL:-https://kds.example.com}
+      # Sentry is optional (unset = off).
+      SENTRY_DSN: ${ORDER_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    healthcheck:
+      # Next.js standalone listens on 3004 (ENV PORT in the Dockerfile). Root
+      # path renders the Welcome screen, no backend calls — fast healthcheck.
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:3004/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - rop-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rop-net
+      - "traefik.http.routers.rop-order.rule=Host(`order.example.com`)"
+      - traefik.http.routers.rop-order.entrypoints=websecure
+      - traefik.http.routers.rop-order.tls=true
+      - traefik.http.routers.rop-order.tls.certresolver=production
+      - traefik.http.routers.rop-order.priority=100
+      - traefik.http.services.rop-order.loadbalancer.server.port=3004
+
+networks:
+  rop-net:
+    external: true

@@ -1,0 +1,324 @@
+name: rop-kds
+
+services:
+  # Datastores — plain compose services on the shared rop-net.
+  # Fresh named volumes; no published ports (apps reach them over the
+  # shared rop-net only).
+  postgres-kds:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_kds
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-kds-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_kds"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - rop-net
+
+  redis-kds:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-kds-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - rop-net
+
+  migrate:
+    image: ghcr.io/example-org/rop-kds-api:main
+    # Force pull on every deploy. The SSH deploy runs `docker compose pull`
+    # first, but keeping this makes a bare `docker compose up -d` also pull the
+    # latest :main so a new release's bundled schema migrations are never
+    # skipped by reusing a stale local image.
+    pull_policy: always
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    # pnpm deploy --prod --legacy doesn't hoist .bin symlinks to top-level
+    # node_modules/.bin/, but does keep them at .pnpm/node_modules/.bin/. Use
+    # the stable .pnpm path so `prisma` is resolvable from the kds-api image.
+    command:
+      - node_modules/.pnpm/node_modules/.bin/prisma
+      - migrate
+      - deploy
+      - --schema
+      - node_modules/@rop/db-kds/prisma/schema.prisma
+    depends_on:
+      postgres-kds:
+        condition: service_healthy
+    networks:
+      - rop-net
+
+  # db-auth migrations (ADR-0015). Same Postgres as the db-kds migrate
+  # sidecar above, but a separate Prisma package owns the WebAdmin* /
+  # WebAuthnCredential schema. The baseline migration is idempotent
+  # (CREATE TABLE IF NOT EXISTS), so this is safe to run after db-kds's
+  # migrate sidecar on existing environments — the rows are no-ops there.
+  migrate-auth:
+    image: ghcr.io/example-org/rop-kds-api:main
+    pull_policy: always
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command:
+      - node_modules/.pnpm/node_modules/.bin/prisma
+      - migrate
+      - deploy
+      - --schema
+      - node_modules/@rop/db-auth/prisma/schema.prisma
+    # db-kds and db-auth share one Postgres. The db-auth baseline is idempotent
+    # and is designed to run AFTER db-kds's migrate (see compose/README.md
+    # + ADR-0015). Without this ordering the two race on a FRESH database and one
+    # fails creating the shared WebAdminRole enum (prisma P3018 / pg 42710).
+    depends_on:
+      postgres-kds:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - rop-net
+
+  kds-api:
+    image: ghcr.io/example-org/rop-kds-api:main
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      migrate-auth:
+        condition: service_completed_successfully
+      redis-kds:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # Infisical secret-zero (ADR-0020): the with-infisical entrypoint reads
+      # this and injects prod secrets at boot. Empty default = no-op passthrough
+      # (the env vars below are used as-is) until the token is set in Infisical (prod).
+      # Project/env(prod)/path(/) use the defaults baked into with-infisical.sh.
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      API_PORT: 4000
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-}
+      APP_BASE_URL: ${APP_BASE_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME}
+      # Shared bearer secret for Backoffice -> kds-api /api/admin/kds/* calls.
+      # MUST be the same value as KDS_INTERNAL_ADMIN_TOKEN in backoffice.yml.
+      # Unset = bearer admin endpoints return 503 internal_admin_disabled (Floor
+      # board + Clover sync unaffected). Min 16 chars or kds-api fails to boot.
+      KDS_INTERNAL_ADMIN_TOKEN: ${KDS_INTERNAL_ADMIN_TOKEN:-}
+      # AES-256-GCM master key for POS provider token at-rest encryption in
+      # db-kds (clover_merchants / pos_accounts / kds_provider_configs *Cipher).
+      # Layer-1 Infisical secret (ADR-0020, amended 2026-06-18): the value lives
+      # in Infisical prod and is injected by with-infisical. This passthrough is
+      # the host-env fallback slot — the empty default is SAFE because kds-api
+      # fails closed at boot (assertAiTokenEncryptionKey) when the key is unset,
+      # not crash-looping inside the first encrypt (the 2026-06-18 incident).
+      AI_TOKEN_ENCRYPTION_KEY: ${AI_TOKEN_ENCRYPTION_KEY:-}
+      # Multi-tenant enforcement mode (ADR-0818 Phase 2c). off (default) = legacy
+      # byte-for-byte resolution; observe = dual-read parity logging (scope
+      # kds.tenant.parity), still returns legacy; enforce = tenant-validated +
+      # fail-closed. The default MUST be a valid enum value, NOT empty — config.ts
+      # parses z.enum(["off","observe","enforce"]).default("off"), which rejects ""
+      # (zod .default() only fires on undefined, and a ${VAR:-} passthrough injects
+      # an empty string). Flip on the host (off→observe→enforce) only after
+      # confirming Loki parity; keep it in sync with kds-worker below.
+      MULTITENANT_MODE: ${MULTITENANT_MODE:-off}
+      BOARD_TIMEZONE: ${BOARD_TIMEZONE}
+      CLOVER_REGION: ${CLOVER_REGION}
+      CLOVER_BASE_URL: ${CLOVER_BASE_URL}
+      CLOVER_MERCHANT_ID: ${CLOVER_MERCHANT_ID:-}
+      CLOVER_TOKEN: ${CLOVER_TOKEN:-}
+      CLOVER_APP_ID: ${CLOVER_APP_ID}
+      CLOVER_APP_SECRET: ${CLOVER_APP_SECRET}
+      CLOVER_WEBHOOK_AUTH_CODE: ${CLOVER_WEBHOOK_AUTH_CODE:-}
+      # Clover Ecommerce online payments (ADR-0027). Optional ${VAR:-} form so
+      # validate-compose-env.py passes while unconfigured; real values live in
+      # Infisical (dev: scl-sandbox host + sandbox keys; prod: scl.clover.com).
+      # API-only (the worker never charges), like CLOVER_WEBHOOK_AUTH_CODE above.
+      CLOVER_ECOMM_API_BASE_URL: ${CLOVER_ECOMM_API_BASE_URL:-}
+      CLOVER_ECOMM_PUBLIC_KEY: ${CLOVER_ECOMM_PUBLIC_KEY:-}
+      CLOVER_ECOMM_PRIVATE_KEY: ${CLOVER_ECOMM_PRIVATE_KEY:-}
+      # Empty default so the validate-compose-env.py check doesn't fail when
+      # Deliverect integration is unconfigured. When Deliverect is enabled,
+      # set DELIVERECT_WEBHOOK_SECRET in Infisical (prod) and the value will flow
+      # through. Empty value means webhook signature verification is skipped
+      # / fails-closed depending on the kds-api code path.
+      DELIVERECT_WEBHOOK_SECRET: ${DELIVERECT_WEBHOOK_SECRET:-}
+      DELIVERECT_API_URL: ${DELIVERECT_API_URL:-https://api.deliverect.com}
+      DELIVERECT_STAGING_API_URL: ${DELIVERECT_STAGING_API_URL:-https://api.staging.deliverect.com}
+      DELIVERECT_WEBHOOK_SIGNATURE_HEADER: ${DELIVERECT_WEBHOOK_SIGNATURE_HEADER:-x-server-authorization-hmac-sha256}
+      RECONCILE_INTERVAL_MS: ${RECONCILE_INTERVAL_MS:-45000}
+      KDS_WORKER_CONCURRENCY: ${KDS_WORKER_CONCURRENCY:-8}
+      KDS_FULFILLMENT_WORKER_CONCURRENCY: ${KDS_FULFILLMENT_WORKER_CONCURRENCY:-4}
+      KDS_CLOVER_BUCKET_REALTIME: ${KDS_CLOVER_BUCKET_REALTIME:-10:10}
+      KDS_CLOVER_BUCKET_RECON: ${KDS_CLOVER_BUCKET_RECON:-6:6}
+      KDS_CLOVER_BUCKET_GLOBAL: ${KDS_CLOVER_BUCKET_GLOBAL:-12:12}
+      KDS_REALTIME_BACKFILL_LIMIT: ${KDS_REALTIME_BACKFILL_LIMIT:-250}
+      DAILY_RESET_ENABLED: ${DAILY_RESET_ENABLED:-false}
+      DAILY_RESET_HOUR: ${DAILY_RESET_HOUR:-21}
+      DAILY_RESET_MINUTE: ${DAILY_RESET_MINUTE:-0}
+      DAILY_RESET_TIMEZONE: ${DAILY_RESET_TIMEZONE:-UTC}
+      DAILY_RESET_CHECK_INTERVAL_MS: ${DAILY_RESET_CHECK_INTERVAL_MS:-30000}
+      WEB_LOGIN_USERNAME: ${WEB_LOGIN_USERNAME:-}
+      WEB_LOGIN_PASSWORD_HASH: ${WEB_LOGIN_PASSWORD_HASH:-}
+      WEB_LOGIN_DISPLAY_NAME: ${WEB_LOGIN_DISPLAY_NAME:-Kitchen Admin}
+      WEB_SESSION_TTL_HOURS: ${WEB_SESSION_TTL_HOURS:-12}
+      SENTRY_DSN: ${KDS_API_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    healthcheck:
+      # kds-web blocks on `depends_on: kds-api: service_healthy`, so the
+      # first-check latency here gates deploy time. Fastify boots in ~1s;
+      # 5 s interval flips us to healthy ~5 s after start instead of ~10 s.
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:4000/api/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - rop-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rop-net
+      - "traefik.http.routers.rop-kds-api.rule=Host(`kds.example.com`) && (PathPrefix(`/api`) || PathPrefix(`/ws`))"
+      - traefik.http.routers.rop-kds-api.entrypoints=websecure
+      - traefik.http.routers.rop-kds-api.priority=100
+      - traefik.http.routers.rop-kds-api.tls=true
+      - traefik.http.routers.rop-kds-api.tls.certresolver=production
+      # Block /api/internal/metrics from the public edge (GH #478): it exposes
+      # queue depth + dead-letter counts and was reachable unauthenticated via the
+      # PathPrefix(`/api`) router above. Prometheus scrapes kds-api:4000 directly
+      # on rop-net (it bypasses Traefik), so internal scraping is unaffected;
+      # the sibling /api/internal/realtime-receipts (browser-posted) stays public.
+      # Higher priority + exact Path() so this wins only for this one path; the
+      # loopback-only ip-allow-list makes every public client get 403.
+      - "traefik.http.routers.rop-kds-metrics-deny.rule=Host(`kds.example.com`) && Path(`/api/internal/metrics`)"
+      - traefik.http.routers.rop-kds-metrics-deny.entrypoints=websecure
+      - traefik.http.routers.rop-kds-metrics-deny.priority=110
+      - traefik.http.routers.rop-kds-metrics-deny.tls=true
+      - traefik.http.routers.rop-kds-metrics-deny.tls.certresolver=production
+      - traefik.http.routers.rop-kds-metrics-deny.service=rop-kds-api
+      - traefik.http.routers.rop-kds-metrics-deny.middlewares=rop-kds-metrics-deny
+      - "traefik.http.middlewares.rop-kds-metrics-deny.ipallowlist.sourcerange=127.0.0.1/32"
+      - "traefik.http.routers.rop-kds-admin.rule=Host(`kds.example.com`) && PathPrefix(`/admin`)"
+      - traefik.http.routers.rop-kds-admin.entrypoints=websecure
+      - traefik.http.routers.rop-kds-admin.priority=95
+      - traefik.http.routers.rop-kds-admin.tls=true
+      - traefik.http.routers.rop-kds-admin.tls.certresolver=production
+      - traefik.http.services.rop-kds-api.loadbalancer.server.port=4000
+
+  kds-worker:
+    image: ghcr.io/example-org/rop-kds-api:main
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      migrate-auth:
+        condition: service_completed_successfully
+      redis-kds:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # Infisical secret-zero (ADR-0020): the with-infisical entrypoint reads
+      # this and injects prod secrets at boot. Empty default = no-op passthrough
+      # (the env vars below are used as-is) until the token is set in Infisical (prod).
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-}
+      CLOVER_REGION: ${CLOVER_REGION}
+      CLOVER_BASE_URL: ${CLOVER_BASE_URL}
+      CLOVER_MERCHANT_ID: ${CLOVER_MERCHANT_ID:-}
+      CLOVER_TOKEN: ${CLOVER_TOKEN:-}
+      CLOVER_APP_ID: ${CLOVER_APP_ID}
+      CLOVER_APP_SECRET: ${CLOVER_APP_SECRET}
+      # AES-256-GCM master key for POS provider token at-rest encryption — the
+      # worker encrypts on bootstrapMerchantFromEnv, so it needs the same key as
+      # kds-api. Layer-1 Infisical secret (ADR-0020, amended 2026-06-18); the
+      # empty default is safe because the worker fails closed at boot
+      # (assertAiTokenEncryptionKey) when the key is unset.
+      AI_TOKEN_ENCRYPTION_KEY: ${AI_TOKEN_ENCRYPTION_KEY:-}
+      # Multi-tenant mode — the worker shares loadConfig() with kds-api, so it must
+      # read the SAME value (a non-empty enum default, see kds-api above) or the two
+      # drift. ADR-0818 Phase 2c.
+      MULTITENANT_MODE: ${MULTITENANT_MODE:-off}
+      DELIVERECT_API_URL: ${DELIVERECT_API_URL:-https://api.deliverect.com}
+      KDS_WORKER_CONCURRENCY: ${KDS_WORKER_CONCURRENCY:-8}
+      KDS_FULFILLMENT_WORKER_CONCURRENCY: ${KDS_FULFILLMENT_WORKER_CONCURRENCY:-4}
+      KDS_CLOVER_BUCKET_REALTIME: ${KDS_CLOVER_BUCKET_REALTIME:-10:10}
+      KDS_CLOVER_BUCKET_RECON: ${KDS_CLOVER_BUCKET_RECON:-6:6}
+      KDS_CLOVER_BUCKET_GLOBAL: ${KDS_CLOVER_BUCKET_GLOBAL:-12:12}
+      DAILY_RESET_ENABLED: ${DAILY_RESET_ENABLED:-false}
+      DAILY_RESET_HOUR: ${DAILY_RESET_HOUR:-21}
+      DAILY_RESET_MINUTE: ${DAILY_RESET_MINUTE:-0}
+      DAILY_RESET_TIMEZONE: ${DAILY_RESET_TIMEZONE:-UTC}
+      SENTRY_DSN: ${KDS_API_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    command: ["node", "dist/worker.js"]
+    networks:
+      - rop-net
+
+  kds-web:
+    image: ghcr.io/example-org/rop-kds-web:main
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      kds-api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      INTERNAL_API_BASE_URL: http://kds-api:4000
+      BOARD_TIMEZONE: ${BOARD_TIMEZONE:-UTC}
+      NEXT_PUBLIC_DEFAULT_MERCHANT_ID: ${NEXT_PUBLIC_DEFAULT_MERCHANT_ID:-}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
+      NEXT_PUBLIC_BOARD_TIMEZONE: ${NEXT_PUBLIC_BOARD_TIMEZONE:-UTC}
+      SENTRY_DSN: ${KDS_WEB_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    healthcheck:
+      # Next.js standalone "Ready in 0 ms" — generous 10 s start_period is
+      # plenty. retries: 6 declares unhealthy after ~30 s of failed checks
+      # instead of the original ~2 min, which improves alarm cadence without
+      # making the check itself flaky.
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:3000/login >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - rop-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rop-net
+      - "traefik.http.routers.rop-kds-web.rule=Host(`kds.example.com`)"
+      - traefik.http.routers.rop-kds-web.entrypoints=websecure
+      - traefik.http.routers.rop-kds-web.priority=10
+      - traefik.http.routers.rop-kds-web.tls=true
+      - traefik.http.routers.rop-kds-web.tls.certresolver=production
+      - traefik.http.services.rop-kds-web.loadbalancer.server.port=3000
+
+volumes:
+  postgres-kds-data:
+  redis-kds-data:
+
+networks:
+  rop-net:
+    external: true

@@ -1,0 +1,11 @@
+-- Internal barcode codes (barcode-onboarding ADR, D4). House-printed labels for no-UPC items
+-- (cups/straws/spoons) mint a code in the `YR-#####` namespace, structurally collision-proof
+-- against GS1 GTINs (which are 8/12/13/14 decimal digits — an alphabetic prefix can never be
+-- one). A Postgres SEQUENCE gives crash-safe, gap-OK unique numbers without a row-lock dance.
+-- It is intentionally NOT modeled in schema.prisma (Prisma doesn't model sequences) and is read
+-- via $queryRaw nextval() in mintBarcode — the same "Prisma-invisible DB object" pattern as the
+-- partial unique indexes.
+--
+-- Additive + safe on live data: creating a sequence touches no existing rows, and IF NOT EXISTS
+-- makes the migration idempotent on a re-run.
+CREATE SEQUENCE IF NOT EXISTS inventory_internal_code_seq START 1 INCREMENT 1 MINVALUE 1;

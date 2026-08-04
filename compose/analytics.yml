@@ -1,0 +1,88 @@
+name: rop-analytics
+
+services:
+  postgres-analytics:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_analytics
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-analytics-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_analytics"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - rop-net
+
+  analytics-api:
+    image: ghcr.io/example-org/rop-analytics-api:main
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      postgres-analytics:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # Infisical secret-zero (ADR-0020): the with-infisical entrypoint reads
+      # this and injects prod secrets at boot. Empty default = no-op passthrough
+      # (the env vars below are used as-is) until the token is set in Infisical (prod).
+      # Project/env(prod)/path(/) use the defaults baked into with-infisical.sh.
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      DATABASE_URL: ${DATABASE_URL}
+      RAW_EXPORT_DIR: /var/lib/rop-intelligence/clover-exports
+      HEALTH_PORT: 3100
+      # ADMIN_TOKEN gates backoffice's BFF -> analytics-api admin endpoints
+      # (Today/Trends/Compare/Dayparts/Menu/Ops dashboards). Backoffice sends
+      # this as a Bearer header; analytics-api's adminGuard compares against
+      # this env. Must match backoffice's ANALYTICS_ADMIN_TOKEN.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      # Backoffice URL used for CORS + redirect-back targets
+      BACKOFFICE_BASE_URL: ${BACKOFFICE_BASE_URL:-https://backoffice.example.com}
+      CLOVER_TOKEN: ${CLOVER_TOKEN:-}
+      CLOVER_MERCHANT_ID: ${CLOVER_MERCHANT_ID:-}
+      CLOVER_BASE_URL: ${CLOVER_BASE_URL:-https://api.clover.com}
+      CLOVER_WEBHOOK_AUTH_CODE: ${CLOVER_WEBHOOK_AUTH_CODE:-}
+      STORE_TIMEZONE: ${STORE_TIMEZONE:-America/Chicago}
+      SENTRY_DSN: ${ANALYTICS_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    volumes:
+      - clover-exports:/var/lib/rop-intelligence/clover-exports
+    healthcheck:
+      # analytics-api raw-node http server boots in ~1 s. Conservative 10 s
+      # start_period; retries: 6 so unhealthy is declared in ~1 min not ~3.
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:3100/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - rop-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rop-net
+      - "traefik.http.routers.rop-analytics-webhook.rule=Host(`analytics.example.com`) && PathPrefix(`/webhooks/clover`)"
+      - traefik.http.routers.rop-analytics-webhook.entrypoints=websecure
+      - traefik.http.routers.rop-analytics-webhook.tls=true
+      - traefik.http.routers.rop-analytics-webhook.tls.certresolver=production
+      - traefik.http.routers.rop-analytics-webhook.priority=100
+      - "traefik.http.routers.rop-analytics-admin.rule=Host(`analytics.example.com`) && PathPrefix(`/admin`)"
+      - traefik.http.routers.rop-analytics-admin.entrypoints=websecure
+      - traefik.http.routers.rop-analytics-admin.tls=true
+      - traefik.http.routers.rop-analytics-admin.tls.certresolver=production
+      - traefik.http.routers.rop-analytics-admin.priority=90
+      - traefik.http.services.rop-analytics.loadbalancer.server.port=3100
+
+volumes:
+  clover-exports:
+  postgres-analytics-data:
+
+networks:
+  rop-net:
+    external: true

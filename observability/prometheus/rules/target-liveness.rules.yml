@@ -1,0 +1,50 @@
+# Target liveness — fires when a scraped target stops responding at all.
+#
+# This is the gap that let the 2026-06-18 KDS crash-loop run ~13h unseen: the
+# rules/ dir held only business-metric rules (DLQ depth, sync freshness,
+# backfill), so a hard-down kds-api raised nothing. `up == 0` means Prometheus
+# could not scrape the target at all — process down, crash-looping, or port
+# unbound — which is exactly that incident's signature.
+#
+# Loaded via `rule_files: /etc/prometheus/rules/*.yml`; mounted read-only.
+# Same no-Alertmanager model as the sibling rule files — these light Prometheus
+# /alerts + the ALERTS{} series in Grafana. The path that actually REACHES A
+# HUMAN is the host cron `scripts/check-business-health.sh`, whose
+# container-liveness check emails on a down/crash-looping container. A target
+# Prometheus does NOT scrape (kds-worker has no HTTP port; crm/inventory APIs
+# and the Next apps are unscraped) is covered there, not here. See
+# .github/OBSERVABILITY.md → "Liveness alerting".
+#
+# `for: 2m` rides out a single missed scrape (scrape_interval 30s ⇒ ~4 scrapes)
+# so a transient blip or a deploy restart does not page; a real crash-loop never
+# recovers within the window.
+groups:
+  - name: target-liveness
+    rules:
+      - alert: TargetDown
+        expr: up{job=~"kds-api|analytics-api|postgres-kds|postgres-analytics|postgres-inventory|redis-kds"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: liveness
+        annotations:
+          summary: "Target {{ $labels.job }} ({{ $labels.instance }}) is DOWN"
+          description: >-
+            Prometheus has not been able to scrape {{ $labels.job }}
+            ({{ $labels.instance }}) for >2m — the process is down, crash-looping,
+            or its port is unbound. This is the 2026-06-18 KDS-outage signature.
+            Triage: ssh oracle ; docker ps -a --filter name=rop- ;
+            docker logs <container> --tail 80.
+
+      - alert: InfraMetricsTargetDown
+        expr: up{job=~"node|prometheus"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: liveness
+        annotations:
+          summary: "Infra metrics target {{ $labels.job }} is down"
+          description: >-
+            {{ $labels.job }} ({{ $labels.instance }}) has not been scrapeable for
+            >5m. Losing node-exporter / the Prometheus self-scrape blinds the
+            other alerts — check the observability stack on the Oracle host.

@@ -1,0 +1,225 @@
+// Loyalty / CRM persistence schema. Owns its own Postgres database (Iron Law 1;
+// see ADR-0021). Generated client uses a package-local output path so it never
+// collides with db-kds / db-inventory clients in the shared
+// node_modules/@prisma/client location.
+//
+// Identity is keyed by phone (ADR-0024): CrmCustomer is the single source of
+// customer identity across the suite. The points balance is an APPEND-ONLY
+// ledger (ADR-0022): CrmPointsLedger is the source of truth; CrmLoyaltyAccount
+// holds a cached projection. Connection string comes from CRM_DATABASE_URL
+// via prisma.config.ts.
+//
+// MULTI-TENANT (Phase 1, ADR-0818): every tenant-owned row carries a denormalized
+// `tenantId` — a bare, un-FK'd string (Iron Law 1: crm doesn't own the Tenant
+// table, which lives in db-kds), mirroring how `merchantId` is carried today. It
+// is nullable + backfilled to the single implicit tenant (`tenant-default`) in
+// this additive phase; NOTHING reads it yet (zero behavior change). The CRM
+// headline change — `phoneE164` becoming unique *per tenant* (brand-global →
+// tenant-global), so two restaurant businesses never share a customer — is the
+// `@@unique([tenantId, …])` rework that lands in a SEPARATE, post-backfill
+// migration (roadmap staging rule #3), never in the same step as the column add.
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../generated/client"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-arm64-openssl-1.1.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Enums ─────────────────────────────────────────────────────────────────────
+enum CrmLedgerType {
+  EARN
+  REDEEM
+  REVERSE
+  EXPIRE
+  ADJUST
+  BONUS
+}
+
+enum CrmLedgerStatus {
+  PENDING
+  AVAILABLE
+  REVERSED
+}
+
+enum CrmRewardKind {
+  FREE_ITEM
+  DISCOUNT
+  DOLLAR_CREDIT
+}
+
+enum CrmRedemptionStatus {
+  ISSUED
+  REDEEMED
+  EXPIRED
+  VOIDED
+}
+
+enum CrmReferralStatus {
+  PENDING
+  QUALIFIED
+  REWARDED
+  EXPIRED
+}
+
+// ── Identity (ADR-0024) ───────────────────────────────────────────────────────
+// The membership/identity spine. Phone (E.164) is the cross-store, cross-channel
+// join key. POS-agnostic: never references a Clover order directly.
+model CrmCustomer {
+  id                  String              @id @default(uuid())
+  tenantId            String?             @map("tenant_id") // multi-tenant scope (ADR-0818); backfilled to tenant-default
+  phoneE164           String              @unique @map("phone_e164")
+  displayName         String?             @map("display_name")
+  email               String?
+  birthMonth          Int?                @map("birth_month") // 1-12; no full DOB needed
+  marketingSmsConsent Boolean             @default(false) @map("marketing_sms_consent")
+  fraudHold           Boolean             @default(false) @map("fraud_hold")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  account             CrmLoyaltyAccount?
+
+  @@index([tenantId])
+  @@map("crm_customers")
+}
+
+// One per customer (1:1). Cached projection of the ledger so reads never sum the
+// whole stream. Brand-global balance: earn at any store, burn at any store.
+model CrmLoyaltyAccount {
+  id                         String                @id @default(uuid())
+  tenantId                   String?               @map("tenant_id") // multi-tenant scope (ADR-0818)
+  customerId                 String                @unique @map("customer_id")
+  balancePoints              Int                   @default(0) @map("balance_points") // SUM(points WHERE status=AVAILABLE)
+  pendingPoints              Int                   @default(0) @map("pending_points")
+  lifetimeEarned             Int                   @default(0) @map("lifetime_earned")
+  lifetimeRedeemed           Int                   @default(0) @map("lifetime_redeemed")
+  lifetimeEligibleSpendCents Int                   @default(0) @map("lifetime_eligible_spend_cents") // drives birthday gate + future tiers
+  lastActivityAt             DateTime?             @map("last_activity_at") // drives 12mo inactivity expiry
+  balanceVersion             Int                   @default(0) @map("balance_version") // optimistic-lock / drift detection
+  createdAt                  DateTime              @default(now()) @map("created_at")
+  updatedAt                  DateTime              @updatedAt @map("updated_at")
+  customer                   CrmCustomer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  ledger                     CrmPointsLedger[]
+  redemptions                CrmRewardRedemption[]
+  referralsMade              CrmReferral[]
+
+  @@index([tenantId])
+  @@map("crm_loyalty_accounts")
+}
+
+// ── Append-only ledger (ADR-0022) ─────────────────────────────────────────────
+// Immutable signed-delta rows; balance = SUM over this. Never UPDATEd except a
+// status flip PENDING -> AVAILABLE/REVERSED. Idempotency is the UNIQUE
+// (source, sourceId, type): a replayed accrual INSERT-conflicts into a no-op
+// (Postgres treats NULL sourceId as distinct, so signup/manual rows are exempt).
+model CrmPointsLedger {
+  id                    String            @id @default(uuid())
+  tenantId              String?           @map("tenant_id") // multi-tenant scope (ADR-0818)
+  accountId             String            @map("account_id")
+  merchantId            String            @map("merchant_id") // suite store identifier (conceptually Location, ADR-0019)
+  locationId            String?           @map("location_id")
+  type                  CrmLedgerType
+  points                Int // signed: EARN/BONUS > 0, REDEEM/REVERSE/EXPIRE < 0
+  status                CrmLedgerStatus   @default(PENDING)
+  source                String // 'clover_order' | 'deliverect' | 'signup' | 'referral' | 'birthday' | 'manual'
+  sourceId              String?           @map("source_id") // e.g. the Clover internal order id
+  reversesLedgerId      String?           @map("reverses_ledger_id")
+  eligibleSubtotalCents Int?              @map("eligible_subtotal_cents") // audit: what the earn was computed from
+  occurredAt            DateTime          @map("occurred_at") // provider clock (order.modifiedAt), not server time
+  createdAt             DateTime          @default(now()) @map("created_at")
+  account               CrmLoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reverses              CrmPointsLedger?  @relation("reversal", fields: [reversesLedgerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reversedBy            CrmPointsLedger[] @relation("reversal")
+
+  @@unique([source, sourceId, type])
+  @@index([accountId, status])
+  @@index([reversesLedgerId])
+  @@index([tenantId])
+  @@map("crm_points_ledger")
+}
+
+// ── Reward catalog (owner-editable; design default seeded in Phase 3) ──────────
+model CrmReward {
+  id                    String                @id @default(uuid())
+  tenantId              String?               @map("tenant_id") // multi-tenant scope (ADR-0818)
+  slug                  String                @unique
+  label                 String
+  costPoints            Int                   @map("cost_points")
+  kind                  CrmRewardKind
+  valueCents            Int                   @map("value_cents") // for liability accounting / cost-per-point
+  active                Boolean               @default(true)
+  couponTtlDays         Int                   @default(30) @map("coupon_ttl_days")
+  minLifetimeSpendCents Int?                  @map("min_lifetime_spend_cents") // e.g. birthday gate
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  redemptions           CrmRewardRedemption[]
+
+  @@index([tenantId])
+  @@map("crm_rewards")
+}
+
+// An issued, app-side redemption coupon (NOT pushed to the POS). Short TTL.
+// Paired 1:1 with the REDEEM ledger row that debited the points.
+model CrmRewardRedemption {
+  id                   String              @id @default(uuid())
+  tenantId             String?             @map("tenant_id") // multi-tenant scope (ADR-0818)
+  accountId            String              @map("account_id")
+  rewardId             String              @map("reward_id")
+  ledgerId             String?             @unique @map("ledger_id") // the REDEEM debit row
+  code                 String              @unique // short human/QR code shown at the counter
+  status               CrmRedemptionStatus @default(ISSUED)
+  costPoints           Int                 @map("cost_points")
+  issuedAt             DateTime            @default(now()) @map("issued_at")
+  expiresAt            DateTime            @map("expires_at") // issuedAt + reward.couponTtlDays
+  redeemedAt           DateTime?           @map("redeemed_at")
+  redeemedAtMerchantId String?             @map("redeemed_at_merchant_id")
+  account              CrmLoyaltyAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reward               CrmReward           @relation(fields: [rewardId], references: [id])
+
+  @@index([accountId])
+  @@index([tenantId])
+  @@map("crm_reward_redemptions")
+}
+
+// Double-sided referral state: the bonus fires only after the referred friend's
+// first qualifying purchase (anti-farming).
+model CrmReferral {
+  id                      String            @id @default(uuid())
+  tenantId                String?           @map("tenant_id") // multi-tenant scope (ADR-0818)
+  referrerAccountId       String            @map("referrer_account_id")
+  referredPhoneE164       String            @map("referred_phone_e164")
+  status                  CrmReferralStatus @default(PENDING)
+  qualifyingOrderSourceId String?           @map("qualifying_order_source_id")
+  createdAt               DateTime          @default(now()) @map("created_at")
+  rewardedAt              DateTime?         @map("rewarded_at")
+  referrer                CrmLoyaltyAccount @relation(fields: [referrerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([referrerAccountId])
+  @@index([referredPhoneE164])
+  @@index([tenantId])
+  @@map("crm_referrals")
+}
+
+// Dead-letter record for loyalty-accrual jobs that exhausted their BullMQ retries
+// (GH #467). Mirrors db-kds `DeadLetterJob`. Without this a terminally-failed
+// accrual was only logged to stdout, so after retry exhaustion + queue eviction
+// there was no queryable record to replay — silently lost points (chargeback /
+// fraud risk). The crm worker INSERTs one row on the final failed attempt.
+// NOTE: never store PII here — `payload` carries the contract event WITHOUT the
+// phone (the worker strips it before persisting), per the crm logging rule.
+model CrmDeadLetterJob {
+  id         String    @id @default(uuid())
+  tenantId   String?   @map("tenant_id") // multi-tenant scope (ADR-0818)
+  merchantId String?   @map("merchant_id") // suite store id (ADR-0019); no FK — crm doesn't own merchants
+  jobType    String    @map("job_type")
+  reason     String
+  payload    Json
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  @@index([createdAt])
+  @@index([tenantId])
+  @@map("crm_dead_letter_jobs")
+}

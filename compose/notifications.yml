@@ -1,0 +1,107 @@
+# Operator notifications stack — LIVE in prod since 2026-06-19 (run 27847711206).
+#
+# notifications-api (the backoffice bell / inbox backend) + its own Postgres.
+# Phases 2 (read path) + 3 (backoffice BFF) + 4 (apply-action) are live; Phase 5
+# producers emit over the /api/notifications/ingest endpoint (inventory-api's 86 /
+# low-stock crossings POST to it, opt-in via env). Realtime push is still unbuilt.
+# Deploys stay user-gated (AGENTS.md "Deploy is user-gated"). The host env files are
+# provisioned: compose/notifications.env (NOTIFICATIONS_DATABASE_URL +
+# NOTIFICATIONS_INTERNAL_TOKEN); the same token is duplicated into backoffice.env
+# (the BFF reader) and inventory.env (the producer). The bell reads the live source —
+# it is empty only until a producer event fires.
+#
+# Shape mirrors crm.yml (a Fastify backend serving a web BFF) MINUS the worker:
+# producers reach notifications-api over HTTP (the /ingest endpoint), not a queue,
+# so there is still no queue consumer — ONE image, ONE service.
+#
+# NOTE (topology): notifications-api is INTERNAL-ONLY — its only caller is the
+# backoffice BFF, which reaches it over rop-net (the shared app network).
+# So there are no traefik labels and no public host; nothing routes to it from the
+# edge. Server-to-server calls carry NOTIFICATIONS_INTERNAL_TOKEN; the operator
+# identity rides in the x-operator-id header the BFF stamps from its session.
+
+name: rop-notifications
+
+services:
+  postgres-notifications:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_notifications
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-notifications-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_notifications"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - rop-net
+
+  migrate:
+    image: ghcr.io/example-org/rop-notifications-api:main
+    # Force pull on every deploy so a new release's migrations are not skipped
+    # by a reused local :main tag (see kds.yml).
+    pull_policy: always
+    restart: "no"
+    environment:
+      NOTIFICATIONS_DATABASE_URL: ${NOTIFICATIONS_DATABASE_URL}
+    # pnpm deploy --prod --legacy keeps .bin symlinks at .pnpm/node_modules/.bin/
+    # rather than top-level node_modules/.bin/. Use the stable .pnpm path.
+    command:
+      - node_modules/.pnpm/node_modules/.bin/prisma
+      - migrate
+      - deploy
+      - --schema
+      - node_modules/@rop/db-notifications/prisma/schema.prisma
+    depends_on:
+      postgres-notifications:
+        condition: service_healthy
+    networks:
+      - rop-net
+
+  notifications-api:
+    image: ghcr.io/example-org/rop-notifications-api:main
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      # Infisical secret-zero (ADR-0020): the with-infisical entrypoint reads
+      # this and injects prod secrets at boot. Empty default = no-op passthrough
+      # until the token is set in Infisical (prod).
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      NOTIFICATIONS_API_PORT: 4400
+      NOTIFICATIONS_DATABASE_URL: ${NOTIFICATIONS_DATABASE_URL}
+      # Trusted server-to-server bearer (the backoffice BFF). Every
+      # /api/notifications route requires it; unset in production fails those
+      # closed. MUST equal NOTIFICATIONS_INTERNAL_TOKEN in backoffice.yml. Min 16
+      # chars (notifications-api config zod) when set.
+      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:-}
+      # Comma-separated browser-origin allowlist (CORS). Internal-only service, so
+      # this stays empty in practice; kept for parity.
+      NOTIFICATIONS_ALLOWED_ORIGINS: ${NOTIFICATIONS_ALLOWED_ORIGINS:-}
+      SENTRY_DSN: ${NOTIFICATIONS_API_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:4400/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - rop-net
+
+volumes:
+  postgres-notifications-data:
+
+networks:
+  rop-net:
+    external: true

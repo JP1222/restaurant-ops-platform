@@ -1,0 +1,24 @@
+node_modules
+.pnpm-store
+.git
+.github
+.next
+dist
+coverage
+docs
+# Re-include docs/legal so apps/legal-site/Dockerfile can COPY the
+# markdown source (EULA.md / PRIVACY_POLICY.md / SUPPORT.md) into the
+# build context. Order matters: this negation must come AFTER `docs`.
+!docs/legal
+ios
+playwright-report
+test-results
+apps/*/node_modules
+apps/*/.next
+apps/*/dist
+packages/*/node_modules
+packages/*/dist
+__MACOSX
+.DS_Store
+.env
+.env.*

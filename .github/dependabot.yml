@@ -1,0 +1,71 @@
+version: 2
+
+updates:
+  # GitHub Actions workflow dependencies (actions/checkout@v4, etc.).
+  # Critical for security — outdated runner actions are an attack surface.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      # One PR per week with all GH Actions bumps, not 10 separate PRs.
+      github-actions:
+        patterns:
+          - "*"
+
+  # Root pnpm workspace — covers all apps and packages because pnpm uses a
+  # single lockfile at the root.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - npm
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      # Group all minor + patch bumps into one PR to keep noise down.
+      # Majors stay separate — they're more likely to need code changes.
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      # Group framework majors (Next, React, Fastify) separately from random
+      # libs so the reviewer can focus.
+      next:
+        patterns:
+          - "next"
+          - "@next/*"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react*"
+      fastify:
+        patterns:
+          - "fastify"
+          - "@fastify/*"
+      prisma:
+        patterns:
+          - "prisma"
+          - "@prisma/*"
+    ignore:
+      # tsx auto-updates have caused churn historically; pin to manual review.
+      - dependency-name: "tsx"
+        update-types: ["version-update:semver-major"]

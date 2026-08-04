@@ -1,0 +1,123 @@
+name: rop-backoffice
+
+services:
+  backoffice-web:
+    image: ghcr.io/example-org/rop-backoffice-web:main
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOSTNAME: 0.0.0.0
+      # Infisical secret-zero (ADR-0020): the with-infisical entrypoint reads
+      # this and injects prod secrets at boot. Empty default = no-op passthrough
+      # (the env vars below are used as-is) until the token is set in Infisical (prod).
+      # Project/env(prod)/path(/) use the defaults baked into with-infisical.sh.
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-}
+      SESSION_SECRET: ${SESSION_SECRET}
+      BACKOFFICE_SESSION_COOKIE_NAME: ${BACKOFFICE_SESSION_COOKIE_NAME:-rop_backoffice_session}
+      BACKOFFICE_WEBAUTHN_FLOW_COOKIE_NAME: ${BACKOFFICE_WEBAUTHN_FLOW_COOKIE_NAME:-rop_backoffice_webauthn_flow}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME}
+      # Master key (32-byte hex) for AES-GCM encryption of app_setting rows with
+      # category=secret (e.g. ai.deepseek_api_key). lib/settings/crypto.ts throws
+      # if unset, so GET/PUT /api/settings 500 without it (the Settings center +
+      # any settings save). Injected from Infisical prod (same `${VAR:-}` +
+      # entrypoint pattern as ANALYTICS_ADMIN_TOKEN below); the empty default
+      # keeps validate-compose-env.py from gating CI on ops state, with
+      # fail-closed in app code. See ADR-0016 / OPERATIONS §7.1.
+      APP_SETTING_ENCRYPTION_KEY: ${APP_SETTING_ENCRYPTION_KEY:-}
+      WEB_SESSION_TTL_HOURS: ${WEB_SESSION_TTL_HOURS:-12}
+      INTERNAL_ANALYTICS_API_URL: ${INTERNAL_ANALYTICS_API_URL:-http://analytics-api:3100}
+      INTERNAL_KDS_API_URL: ${INTERNAL_KDS_API_URL:-http://kds-api:4000}
+      # Backoffice BFF route handlers proxy /api/inventory/** to inventory-api.
+      # Unset = inventory pages throw InventoryApiNotConfiguredError on first
+      # request (other dashboards keep working).
+      INTERNAL_INVENTORY_API_URL: ${INTERNAL_INVENTORY_API_URL:-http://inventory-api:4100}
+      # Shared bearer for Backoffice BFF -> inventory-api write endpoints.
+      # MUST equal INVENTORY_INTERNAL_TOKEN in inventory.yml. Unset = backoffice
+      # inventory writes (toggle-86, recount, waste, receive) fail with 401;
+      # reads still work. Min 16 chars.
+      INVENTORY_INTERNAL_TOKEN: ${INVENTORY_INTERNAL_TOKEN:-}
+      # Backoffice BFF (/api/guests) proxies to crm-api for the /guests RFM
+      # cohort page. Unset URL = /guests renders its "not connected" state (other
+      # dashboards keep working). CRM_INTERNAL_TOKEN MUST equal the value in
+      # crm.yml — crm-api bearer-guards every loyalty route except the public
+      # reward catalog. Min 16 chars (backoffice env zod) when set.
+      INTERNAL_CRM_API_URL: ${INTERNAL_CRM_API_URL:-http://crm-api:4200}
+      CRM_INTERNAL_TOKEN: ${CRM_INTERNAL_TOKEN:-}
+      # Backoffice BFF (/api/notifications/**) proxies to notifications-api for the
+      # operator bell/inbox. OPT-IN: unlike the URLs above this has NO in-network
+      # default, so the bell stays on its sample seed (the BFF returns 503 "not
+      # connected") until BOTH vars are set — notifications-api has no producers
+      # yet, so connecting it early would just show an empty inbox. To go live:
+      # set INTERNAL_NOTIFICATIONS_API_URL=http://notifications-api:4400 and a
+      # NOTIFICATIONS_INTERNAL_TOKEN matching notifications.yml (min 16 chars).
+      INTERNAL_NOTIFICATIONS_API_URL: ${INTERNAL_NOTIFICATIONS_API_URL:-}
+      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:-}
+      # Shared bearer secret for Backoffice -> kds-api /api/admin/kds/* calls.
+      # MUST be the same value as KDS_INTERNAL_ADMIN_TOKEN in kds.yml. Unset =
+      # KDS admin pages (Board Settings, Devices) return 503 admin_not_configured;
+      # analytics dashboards keep working. Min 16 chars or backoffice-web fails
+      # to boot. NOTE: this is NOT the Clover API token (that is CLOVER_TOKEN on
+      # the kds stack) — it is an internal service-to-service secret.
+      KDS_INTERNAL_ADMIN_TOKEN: ${KDS_INTERNAL_ADMIN_TOKEN:-}
+      # ANALYTICS_ADMIN_TOKEN is REQUIRED — backoffice → analytics-api admin
+      # API calls (Today/Trends/Compare/Dayparts/etc. dashboards) gate on this
+      # bearer token. Backoffice startup zod validation fails fast if unset.
+      ANALYTICS_ADMIN_TOKEN: ${ANALYTICS_ADMIN_TOKEN:-}
+      APP_BASE_URL: ${APP_BASE_URL:-https://backoffice.example.com}
+      NEXT_PUBLIC_APP_BASE_URL: ${NEXT_PUBLIC_APP_BASE_URL:-https://backoffice.example.com}
+      # Ops Pipeline dashboard (Operations → Pipeline tab) reads GH Actions
+      # runs + GHCR image versions. Optional: tab degrades gracefully when
+      # unset. PAT scopes: `actions:read`, `read:packages`.
+      GITHUB_PIPELINE_TOKEN: ${GITHUB_PIPELINE_TOKEN:-}
+      GITHUB_REPO_OWNER: ${GITHUB_REPO_OWNER:-example-org}
+      GITHUB_REPO_NAME: ${GITHUB_REPO_NAME:-restaurant-ops-platform}
+      SENTRY_DSN: ${BACKOFFICE_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      # DeepSeek API key — DEPRECATED transition fallback (#265 moved the
+      # canonical source to the `ai.deepseek_api_key` AppSetting row, encrypted
+      # at rest, set via /settings/system; the DB row wins over this env var).
+      # The `:-` default keeps validate-compose-env.py from requiring an
+      # Infisical (prod) entry — CI shouldn't gate on ops state. When neither the DB row nor
+      # this var is set, POST /api/ai/chat returns 503 auth_not_configured
+      # (fail-closed in code, not in CI). Drop this var once the key is migrated
+      # to the AppSetting row in every environment. Runtime tunables (model id,
+      # rate limit, kill switch, thinking mode) are AppSetting-backed (ADR-0016).
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      # Trusted internal callers of the AI receipt-parse route (POST
+      # /api/inventory/receipt-parse) that don't carry a backoffice session —
+      # today just crew-web's invoice-scan BFF, which has no AI provider and
+      # forwards the image here (ADR-0538). MUST equal INTERNAL_AI_TOKEN in
+      # crew.yml. Unset = only logged-in backoffice operators may call it.
+      INTERNAL_AI_TOKEN: ${INTERNAL_AI_TOKEN:-}
+    healthcheck:
+      # Next.js standalone "Ready in 0 ms" — 10 s start_period is plenty.
+      # retries: 6 means container is flagged unhealthy after ~1 min of
+      # failures instead of ~3 min, so Slack alarms fire sooner.
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:3001/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - rop-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rop-net
+      - "traefik.http.routers.rop-backoffice.rule=Host(`backoffice.example.com`)"
+      - traefik.http.routers.rop-backoffice.entrypoints=websecure
+      - traefik.http.routers.rop-backoffice.tls=true
+      - traefik.http.routers.rop-backoffice.tls.certresolver=production
+      - traefik.http.routers.rop-backoffice.priority=100
+      - traefik.http.services.rop-backoffice.loadbalancer.server.port=3001
+
+networks:
+  rop-net:
+    external: true

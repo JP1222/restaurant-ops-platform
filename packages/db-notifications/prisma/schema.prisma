@@ -1,0 +1,140 @@
+// Operator-notification persistence schema. Owns its own Postgres database (Iron
+// Law 1; see ADR-0801). The generated client uses a package-local output path so
+// it never collides with the db-kds / db-inventory / db-crm clients in the shared
+// node_modules/@prisma/client location.
+//
+// One Notification is a global event (a producer writes it once). Per-operator
+// interaction lives in NotificationState (read / snoozed / dismissed), keyed by
+// the backoffice operator id — notifications-api never imports db-auth (Iron Law
+// 1/3); the BFF passes the operator id. Delivery preferences are normalized:
+// one NotificationPref row per operator (quiet hours) + one
+// NotificationCategoryPref per (operator, category). Enum values match the
+// @rop/contracts wire strings 1:1 so routes need no mapping. Connection
+// string comes from NOTIFICATIONS_DATABASE_URL via prisma.config.ts.
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../generated/client"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-arm64-openssl-1.1.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Enums (values match the contract DTO strings exactly) ─────────────────────
+enum NotificationSeverity {
+  crit
+  warn
+  info
+}
+
+enum NotificationCategory {
+  sales
+  inv
+  dev
+  cost
+  intg
+}
+
+enum NotificationMinSeverity {
+  all
+  warn
+  crit
+}
+
+// ── Event ─────────────────────────────────────────────────────────────────────
+// A global notification a producer emits once. The AI investigation (text + an
+// optional component block) is stored as JSON — its shape is the contract's
+// AiInvestigation, validated at the route boundary, not in the column.
+model Notification {
+  id            String               @id @default(uuid())
+  severity      NotificationSeverity
+  category      NotificationCategory
+  categoryLabel String               @map("category_label")
+  icon          String
+  title         String
+  detail        String
+  actionLabel   String               @map("action_label")
+  actionIcon    String               @map("action_icon")
+  actionHref    String               @map("action_href")
+  ai            Json?
+  locationId    String?              @map("location_id") // scope (ADR-0018); null = brand-global
+  // Producer idempotency key (ingest). UNIQUE so a retry / repeated signal returns
+  // the existing row instead of a duplicate. Nullable: notifications created before
+  // ingest, or producers that always-create, carry null (Postgres allows many nulls
+  // in a unique index).
+  dedupeKey     String?              @unique @map("dedupe_key")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  states        NotificationState[]
+
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ── Per-operator interaction state ────────────────────────────────────────────
+// One row per (notification, operator). Absent row = unread, not snoozed, not
+// dismissed. Snooze/dismiss are timestamps so the live filter is a time compare.
+model NotificationState {
+  id             String       @id @default(uuid())
+  notificationId String       @map("notification_id")
+  operatorId     String       @map("operator_id")
+  read           Boolean      @default(false)
+  snoozedUntil   DateTime?    @map("snoozed_until")
+  dismissedAt    DateTime?    @map("dismissed_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, operatorId])
+  @@index([operatorId])
+  @@map("notification_states")
+}
+
+// ── Preferences (server-enforced; critical always bypasses quiet hours) ────────
+model NotificationPref {
+  operatorId String                     @id @map("operator_id")
+  quiet      Boolean                    @default(true)
+  quietFrom  String                     @default("10:00 PM") @map("quiet_from")
+  quietTo    String                     @default("7:00 AM") @map("quiet_to")
+  createdAt  DateTime                   @default(now()) @map("created_at")
+  updatedAt  DateTime                   @updatedAt @map("updated_at")
+  categories NotificationCategoryPref[]
+
+  @@map("notification_prefs")
+}
+
+model NotificationCategoryPref {
+  id          String                  @id @default(uuid())
+  operatorId  String                  @map("operator_id")
+  category    NotificationCategory
+  inapp       Boolean                 @default(true)
+  email       Boolean                 @default(false)
+  push        Boolean                 @default(false)
+  minSeverity NotificationMinSeverity @default(all) @map("min_severity")
+  pref        NotificationPref        @relation(fields: [operatorId], references: [operatorId], onDelete: Cascade)
+
+  @@unique([operatorId, category])
+  @@map("notification_category_prefs")
+}
+
+// ── Suggested-action audit (Phase 4) ──────────────────────────────────────────
+// Append-only record of an applied AI suggested action. `idempotencyKey` is
+// UNIQUE: a repeated confirm (same key) collides instead of double-applying, so
+// the endpoint returns "already_applied". Records who applied it and the role the
+// trusted BFF asserted — notifications-api never resolves operators itself (Iron
+// Law 1/3); `operatorId` + `operatorRole` are the BFF's stamped claims. The real
+// per-action effect (e.g. 86 an item) lands with its producer; today this row is
+// the durable record + the idempotency anchor.
+model NotificationActionAudit {
+  id             String   @id @default(uuid())
+  notificationId String   @map("notification_id")
+  actionId       String   @map("action_id")
+  idempotencyKey String   @unique @map("idempotency_key")
+  operatorId     String   @map("operator_id")
+  operatorRole   String   @map("operator_role")
+  appliedAt      DateTime @default(now()) @map("applied_at")
+
+  @@index([notificationId])
+  @@map("notification_action_audit")
+}

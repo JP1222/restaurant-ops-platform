@@ -1,0 +1,14 @@
+{
+  "//": "Infisical MCP server for AI coding agents (Claude Code reads .mcp.json; Codex CLI uses its own ~/.codex config with the same command/env). Copy the `infisical` block into your real .mcp.json once a read-only, dev-only machine identity exists. Authenticate with the `rop-dev-agent` identity ONLY (read-only, env=dev) so the agent can never reach prod. Set the two client-id/secret values from your shell/keychain — do NOT commit them.",
+  "mcpServers": {
+    "infisical": {
+      "command": "npx",
+      "args": ["-y", "@infisical/mcp"],
+      "env": {
+        "INFISICAL_HOST_URL": "https://app.infisical.com",
+        "INFISICAL_UNIVERSAL_AUTH_CLIENT_ID": "${INFISICAL_DEV_AGENT_CLIENT_ID}",
+        "INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET": "${INFISICAL_DEV_AGENT_CLIENT_SECRET}"
+      }
+    }
+  }
+}

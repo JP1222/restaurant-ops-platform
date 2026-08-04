@@ -1,0 +1,24 @@
+# Code owners for restaurant-ops-platform. GitHub auto-requests review from these handles
+# when a PR touches the matching paths. Combined with the "1 approval required"
+# branch protection ruleset, this means owners get pinged automatically.
+#
+# Syntax: <path pattern>  <github-handle> [<github-handle>...]
+# Last matching line wins.
+
+# Default owner — anything not explicitly listed.
+# TODO: add teammate's GitHub handle here once known, e.g.:
+#   *  @example-org @teammate-handle
+*  @example-org
+
+# Infra / CI / ops — only @example-org for now (teammate is SaaS-friendly, not
+# expected to operate self-hosted infra; teammate notifications still go
+# via Slack, see team_ops_preference memory).
+/.github/                          @example-org
+/docker-compose*.yml               @example-org
+/apps/kds-api/Dockerfile           @example-org
+/apps/kds-web/Dockerfile           @example-org
+/apps/analytics-api/Dockerfile     @example-org
+/apps/backoffice-web/Dockerfile    @example-org
+
+# Database schema — high blast radius, sole owner reviews schema changes.
+/packages/db-kds/prisma/           @example-org

@@ -1,0 +1,11 @@
+-- Device pairing (ADR-0818 Phase 2b): add a DISPLAY role to KdsDeviceRole so a
+-- customer-facing order-ready display can pair to a store with its own device
+-- token, distinct from a kitchen KDS board.
+--
+-- COMPATIBILITY / ROLLBACK: purely ADDITIVE and zero-behavior-change. Adds one
+-- enum value; existing kds_device_tokens rows stay 'KDS'. Nothing reads DISPLAY
+-- yet (the pairing flow + display token-scoping land in later PRs). A Postgres
+-- enum value cannot be dropped, so rollback is a no-op (the unused value is
+-- harmless). ADD VALUE is a single statement (it cannot run alongside a use of
+-- the new value in the same transaction; this migration only adds it).
+ALTER TYPE "KdsDeviceRole" ADD VALUE IF NOT EXISTS 'DISPLAY';

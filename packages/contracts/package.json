@@ -1,0 +1,39 @@
+{
+  "name": "@rop/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "yr-src": "./src/index.ts",
+      "import": "./dist/index.js"
+    },
+    "./match": {
+      "types": "./dist/inventory-match.d.ts",
+      "yr-src": "./src/inventory-match.ts",
+      "import": "./dist/inventory-match.js"
+    },
+    "./tenant-claim": {
+      "types": "./dist/tenant-claim.d.ts",
+      "yr-src": "./src/tenant-claim.ts",
+      "import": "./dist/tenant-claim.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1"
+  }
+}

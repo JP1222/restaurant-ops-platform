@@ -1,0 +1,137 @@
+# Loyalty / CRM stack — STAGED, NOT YET DEPLOYED.
+#
+# The worker code spine is live on main (PR4c #346 + PR4d #347), but going live
+# is user-gated (see AGENTS.md "Deploy is user-gated"). This compose documents
+# the target topology and is ready to provision when the owner decides to launch
+# loyalty. Remaining go-live steps (all the owner's): provision the crm stack's
+# Postgres, set the env below in Infisical (prod) + the host crm.env, seed the 6
+# reward rungs, then trigger build-images.yml. Deploy crm-worker *before/with*
+# the kds-api emit so no accrual jobs strand.
+#
+# Shape mirrors inventory.yml (a Fastify backend serving web BFFs) + kds.yml's
+# worker split: ONE image, two services — crm-api (HTTP) and crm-worker (the
+# loyalty-accrual consumer), exactly like kds-api / kds-worker.
+#
+# NOTE (topology knob): crm-api is exposed on a public, bearer-protected host
+# (crm.example.com) like inventory-api — its callers are the order-web /
+# marketing / backoffice BFFs, and PII reads require CRM_INTERNAL_TOKEN (only the
+# reward catalog is public). If you'd rather keep it internal-only, drop the
+# traefik labels and the BFFs still reach it over rop-net — the single
+# shared app network every stack is on.
+
+name: rop-crm
+
+services:
+  postgres-crm:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rop_crm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-crm-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rop_crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - rop-net
+
+  migrate:
+    image: ghcr.io/example-org/rop-crm-api:main
+    # Force pull on every deploy so a new release's migrations are not skipped
+    # by a reused local :main tag (see kds.yml).
+    pull_policy: always
+    restart: "no"
+    environment:
+      CRM_DATABASE_URL: ${CRM_DATABASE_URL}
+    # pnpm deploy --prod --legacy keeps .bin symlinks at .pnpm/node_modules/.bin/
+    # rather than top-level node_modules/.bin/. Use the stable .pnpm path.
+    command:
+      - node_modules/.pnpm/node_modules/.bin/prisma
+      - migrate
+      - deploy
+      - --schema
+      - node_modules/@rop/db-crm/prisma/schema.prisma
+    depends_on:
+      postgres-crm:
+        condition: service_healthy
+    networks:
+      - rop-net
+
+  crm-api:
+    image: ghcr.io/example-org/rop-crm-api:main
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      # Infisical secret-zero (ADR-0020): the with-infisical entrypoint reads
+      # this and injects prod secrets at boot. Empty default = no-op passthrough
+      # until the token is set in Infisical (prod).
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      CRM_API_PORT: 4200
+      CRM_DATABASE_URL: ${CRM_DATABASE_URL}
+      # Trusted server-to-server bearer (order-web / marketing / backoffice BFFs).
+      # Enrollment + PII reads (balance/history) require it; the reward catalog is
+      # public. Unset in production fails those closed (503).
+      CRM_INTERNAL_TOKEN: ${CRM_INTERNAL_TOKEN:-}
+      # Comma-separated browser-origin allowlist (CORS). Empty trusts all (dev).
+      CRM_ALLOWED_ORIGINS: ${CRM_ALLOWED_ORIGINS:-}
+      SENTRY_DSN: ${CRM_API_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:4200/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - rop-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rop-net
+      - "traefik.http.routers.rop-crm.rule=Host(`crm.example.com`)"
+      - traefik.http.routers.rop-crm.entrypoints=websecure
+      - traefik.http.routers.rop-crm.tls=true
+      - traefik.http.routers.rop-crm.tls.certresolver=production
+      - traefik.http.services.rop-crm.loadbalancer.server.port=4200
+
+  crm-worker:
+    image: ghcr.io/example-org/rop-crm-api:main
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_MACHINE_CLIENT_ID: ${INFISICAL_MACHINE_CLIENT_ID:-}
+      INFISICAL_MACHINE_CLIENT_SECRET: ${INFISICAL_MACHINE_CLIENT_SECRET:-}
+      CRM_DATABASE_URL: ${CRM_DATABASE_URL}
+      # MUST be the SAME Redis kds-api produces the crm-loyalty-accrual queue to
+      # (the queue is a cross-app message bus; set this to the kds stack's
+      # REDIS_URL value). The worker refuses to start without it.
+      CRM_REDIS_URL: ${CRM_REDIS_URL}
+      CRM_LOYALTY_WORKER_CONCURRENCY: ${CRM_LOYALTY_WORKER_CONCURRENCY:-4}
+      SENTRY_DSN: ${CRM_API_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    command: ["node", "dist/worker.js"]
+    networks:
+      - rop-net
+
+volumes:
+  postgres-crm-data:
+
+networks:
+  rop-net:
+    external: true

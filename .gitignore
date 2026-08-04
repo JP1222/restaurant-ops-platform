@@ -1,0 +1,38 @@
+node_modules
+.pnpm-store
+.next
+dist
+coverage
+playwright-report
+test-results
+.playwright-cli
+.turbo
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+# Per-stack production host env files (real secrets/bootstrap) — see
+# .env.prod.example. The .example template itself stays tracked.
+compose/*.env
+docker-compose.override.yml
+# Real MCP server config holds tokens/secrets (copied from a tracked
+# .mcp.json.*.example template). Only the templates stay tracked.
+.mcp.json
+apps/*/.next
+apps/*/dist
+apps/*/next-env.d.ts
+packages/*/dist
+packages/*/prisma/generated
+.DS_Store
+.claude/*
+!.claude/settings.json
+
+# Xcode / Swift
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
+ios/**/DerivedData/
+ios/**/.build/
+.swiftpm/
+
+# Per-worktree session declaration (see scripts/sessions.sh) — ephemeral, never committed
+SESSION.md

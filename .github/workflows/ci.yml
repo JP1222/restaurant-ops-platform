@@ -1,0 +1,43 @@
+# Portable CI — runs on GitHub-hosted runners so any fork/clone gets automated
+# checks with zero infrastructure. (The original suite ran lint/build/test/e2e on
+# self-hosted runners plus a manual image-build + SSH deploy; those were specific
+# to a private deployment and are intentionally not part of this open-source repo.)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma clients
+        run: pnpm db:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Docs checks
+        run: pnpm docs:check

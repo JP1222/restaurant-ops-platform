@@ -1,0 +1,59 @@
+{
+  "name": "restaurant-ops-platform",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "preinstall": "node scripts/require-pnpm-install.mjs",
+    "bootstrap": "sh -c 'if ! command -v pnpm >/dev/null 2>&1; then if ! command -v corepack >/dev/null 2>&1; then echo \"corepack is required to activate pnpm@10.33.0\" >&2; exit 1; fi; corepack enable && corepack prepare pnpm@10.33.0 --activate; fi; pnpm install'",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "pnpm --filter @rop/kds-web test:e2e && pnpm --filter @rop/backoffice-web test:e2e && pnpm --filter @rop/crew-web test:e2e",
+    "docs:check": "sh scripts/check-doc-drift.sh",
+    "runners:check": "python3 scripts/check-runner-policy.py",
+    "sync-contracts": "bash scripts/sync-contracts.sh",
+    "contracts:check": "bash scripts/sync-contracts.sh --check",
+    "ai:prices:sync": "node scripts/ai-prices-sync.mjs",
+    "db:generate": "pnpm --filter @rop/db-kds generate && pnpm --filter @rop/db-auth generate && pnpm --filter @rop/db-inventory generate && pnpm --filter @rop/db-crm generate",
+    "db:migrate:deploy": "pnpm --filter @rop/db-kds exec prisma migrate deploy --schema ./prisma/schema.prisma && pnpm --filter @rop/db-auth exec prisma migrate deploy --schema ./prisma/schema.prisma && pnpm --filter @rop/db-inventory exec prisma migrate deploy --schema ./prisma/schema.prisma",
+    "db:seed": "pnpm --filter @rop/db-inventory seed",
+    "bootstrap:dev": "./scripts/dev-up.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.0",
+    "@testcontainers/postgresql": "^12.0.4",
+    "@testcontainers/redis": "^12.0.4",
+    "@types/node": "^26.1.1",
+    "eslint": "^10.4.0",
+    "globals": "^17.8.0",
+    "quicktype": "23.3.6",
+    "testcontainers": "^12.0.4",
+    "turbo": "^2.10.7",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "ioredis": "^5.11.0"
+    },
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "msgpackr-extract",
+      "msw",
+      "prisma",
+      "sharp",
+      "unrs-resolver"
+    ]
+  }
+}

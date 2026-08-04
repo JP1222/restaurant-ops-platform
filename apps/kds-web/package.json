@@ -1,0 +1,29 @@
+{
+  "name": "@rop/kds-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "YR_SRC=1 next dev --port 3000",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0 --port 3000",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@sentry/nextjs": "^10.68.0",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@rop/auth": "workspace:*",
+    "@rop/contracts": "workspace:*",
+    "next": "^16.2.12",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.2"
+  }
+}

@@ -1,0 +1,19 @@
+# gitleaks config — extend the default rules, but allowlist paths that only ever
+# hold TEST FIXTURES or committed dev-only dummy values (verified: no real
+# secrets). This keeps `gitleaks detect` clean without editing the fixtures,
+# which intentionally contain realistic-looking fake tokens to exercise the
+# app's secret-redaction / looksLikeSecret logic.
+title = "restaurant-ops-platform gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures + committed dev dummies (no real secrets)."
+paths = [
+  '''.*\.test\.ts$''',
+  '''.*/tests/.*''',
+  '''.*vitest.*\.config\.ts$''',
+  '''scripts/dev-defaults\.sh$''',
+  '''.*\.env\.example$''',
+]

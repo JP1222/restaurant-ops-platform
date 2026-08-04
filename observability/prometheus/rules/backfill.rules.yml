@@ -1,0 +1,94 @@
+# Alert rules for the analytics-api historical-export backfill.
+#
+# Loaded via `rule_files` in prometheus.yml and mounted read-only into the
+# prom/prometheus container (docker-compose.observability.yml). Edit then either
+# POST http://prometheus:9090/-/reload from inside the observability network or
+# `docker compose restart prometheus`.
+#
+# There is no Alertmanager in this stack (ops liveness routes through Prometheus
+# + Grafana, see HANDOFF.md / the observability compose). These alerts surface
+# in Prometheus /alerts and as the `ALERTS{alertname=...}` series queryable in
+# Grafana. The in-app Backoffice banner already covers the attended case; this
+# is the unattended page.
+#
+# Metrics come from src/metrics/backfill-gauges.ts, populated per sync target by
+# BackfillMetricsUpdater (every BACKFILL_METRICS_REFRESH_SECONDS, default 300s).
+# Every series is labelled by merchant_id (ADR-0018 multi-location).
+groups:
+  - name: analytics-backfill
+    rules:
+      # A window in 'blocked' status means the scheduler has parked the backfill:
+      # markJobFailed flips it to 'blocked' on a manual_attention-class error or
+      # after historicalBackfillMaxWindowFailures (default 3) retries, and
+      # enqueueHistoricalBackfill then refuses to advance past it. Nothing moves
+      # until a human resolves the underlying cause, so this is the primary
+      # needs-manual-intervention page.
+      - alert: BackfillWindowBlocked
+        expr: rop_backfill_blocked_windows > 0
+        for: 1h
+        labels:
+          severity: warning
+          service: analytics-api
+          component: historical-backfill
+        annotations:
+          summary: "Historical backfill blocked for merchant {{ $labels.merchant_id }}"
+          description: >-
+            {{ $value }} historical-export backfill window(s) are blocked for
+            merchant {{ $labels.merchant_id }}. The scheduler will not advance
+            the backfill until the underlying error is resolved — manual
+            intervention required. Check the Backoffice ops page / sync_windows
+            last_error for this merchant.
+
+      # Progress has flat-lined: nothing has completed in 48h while windows still
+      # remain. Healthy backfill completes ~1 window/day during the daily export
+      # window, so 48h of zero forward progress means it is stuck for a reason the
+      # blocked check did not catch (e.g. export runner down, export window
+      # misconfigured, jobs enqueued but never picked up). The
+      # seconds_since_last_completed series is absent when the backfill is
+      # complete (remaining = 0) or nothing has been observed yet, so this only
+      # fires on a genuinely stalled, still-incomplete backfill.
+      - alert: BackfillStalled
+        expr: rop_backfill_seconds_since_last_completed > 48 * 3600 and rop_backfill_remaining_windows > 0
+        for: 1h
+        labels:
+          severity: warning
+          service: analytics-api
+          component: historical-backfill
+        annotations:
+          summary: "Historical backfill stalled for merchant {{ $labels.merchant_id }}"
+          description: >-
+            No historical-export backfill window has completed in
+            {{ $value | humanizeDuration }} for merchant {{ $labels.merchant_id }}
+            while windows still remain. Forward progress has flat-lined — check
+            that the analytics-api export runner and scheduler are healthy and the
+            export window is configured.
+
+  # Reconciliation surfacing (src/metrics/recon-gauges.ts, populated per sync
+  # target by ReconMetricsUpdater). The actual unresolved breaks render on the
+  # Backoffice ops page (the attended surface); per-break Prometheus rules are
+  # deliberately NOT added — with no Alertmanager they'd fire into a UI nobody
+  # watches. The ONE thing the panel itself cannot show is a silently-dead
+  # reconciler, so that is the only recon rule here.
+  - name: analytics-reconciliation
+    rules:
+      # The daily export reconcile writes an audit.reconciliation_results row per
+      # business_date every run, so rop_recon_last_run_timestamp should advance
+      # at least daily. If it stops advancing the reconciler is dead and the
+      # break panel silently goes stale — a meta-freshness failure invisible
+      # everywhere else. The series is absent until the first-ever reconcile, so a
+      # fresh deploy reads "no data" rather than firing.
+      - alert: ReconCheckerStalled
+        expr: time() - rop_recon_last_run_timestamp > 36 * 3600
+        for: 1h
+        labels:
+          severity: warning
+          service: analytics-api
+          component: reconciliation
+        annotations:
+          summary: "Reconciliation checker stalled for merchant {{ $labels.merchant_id }}"
+          description: >-
+            No new reconciliation result has been written in
+            {{ $value | humanizeDuration }} for merchant {{ $labels.merchant_id }}.
+            The daily raw-vs-mart reconcile appears to have stopped running, so
+            unresolved-break detection is itself stale — check the analytics-api
+            scheduler and export runner.

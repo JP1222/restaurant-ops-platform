@@ -1,0 +1,40 @@
+# Promtail config: tail every rop-* docker container's stdout/stderr
+# and ship as labeled streams to Loki. Mounted read-only into the container.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Docker service discovery: enumerate all running containers from the
+  # docker socket and tail each one. Filter to rop-* via relabel.
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+        filters:
+          - name: name
+            values: ["rop-"]
+    relabel_configs:
+      # Strip leading `/` from container names so the label is clean.
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      # Extract the compose service name (everything between project name
+      # and the replica suffix). Examples:
+      #   rop-kds-api-1               → kds-api
+      #   rop-kds-worker-2            → kds-worker
+      #   rop-backoffice-backoffice-web-1 → backoffice-web
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: service
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: compose_project
+      # Carry the container image so we can grep "this version of the image".
+      - source_labels: ['__meta_docker_container_label_org_opencontainers_image_revision']
+        target_label: image_revision

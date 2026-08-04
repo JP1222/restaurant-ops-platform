@@ -1,0 +1,79 @@
+# Host resource pressure — fires before the host hard-freezes, not after.
+#
+# Triggered by the 2026-06-30 incident: memory commit ratio climbed past 100%
+# (overcommitted, no swap as a buffer) for ~3.5h while iowait spiked to 70%+,
+# culminating in a full kernel freeze (systemd watchdog timeouts, journal
+# writes stopping entirely) that required a manual power-cycle via the OCI
+# console — every app on the host (kds, order-web, backoffice, etc.) was
+# unreachable for the duration. TargetDown (target-liveness.rules.yml) never
+# fired because Prometheus itself couldn't be scraped either; this rule group
+# is meant to catch the climb *before* that point, while Prometheus is still
+# alive to evaluate it. An 8GB swapfile was added the same day as a buffer,
+# but these don't have per-container attribution: the host runs the production
+# suite alongside unrelated personal services (Plex/qBittorrent/MoviePilot/
+# CloudDrive2), which is the suspected source of bursty memory/iowait spikes.
+#
+# Loaded via `rule_files: /etc/prometheus/rules/*.yml`; mounted read-only.
+# Same no-Alertmanager-required model as the sibling rule files — these light
+# Prometheus /alerts + the ALERTS{} series in Grafana, and fan to Slack via
+# Alertmanager when it's reachable. See .github/OBSERVABILITY.md.
+groups:
+  - name: host-resource
+    rules:
+      - alert: HostMemoryCommitRatioHigh
+        expr: (node_memory_Committed_AS_bytes{job="node"} / node_memory_CommitLimit_bytes{job="node"}) * 100 > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: host-resource
+        annotations:
+          summary: "Host memory commit ratio is {{ $value | printf \"%.0f\" }}%"
+          description: >-
+            Committed virtual memory has exceeded the host's commit limit
+            (RAM + swap) for >5m — this is the 2026-06-30 freeze precursor.
+            Triage: ssh oracle ; docker stats --no-stream ; sort by MemUsage
+            to find the heaviest container(s) — check the personal media
+            stack (moviepilot-v2, plex, qbittorrent, clouddrive2) first, it
+            shares this host with production and is the prime suspect.
+
+      - alert: HostMemoryCommitRatioCritical
+        expr: (node_memory_Committed_AS_bytes{job="node"} / node_memory_CommitLimit_bytes{job="node"}) * 100 > 120
+        for: 3m
+        labels:
+          severity: critical
+          component: host-resource
+        annotations:
+          summary: "Host memory commit ratio is {{ $value | printf \"%.0f\" }}% — freeze risk"
+          description: >-
+            Commit ratio >120% for >3m. The 2026-06-30 incident crossed 110-135%
+            repeatedly in the hour before the host froze solid and required a
+            manual power-cycle. Act now: ssh oracle ; docker stats --no-stream ;
+            consider stopping the personal media stack (plex/qbittorrent/
+            moviepilot-v2/clouddrive2) to relieve pressure.
+
+      - alert: HostIowaitHigh
+        expr: avg by (instance) (rate(node_cpu_seconds_total{job="node", mode="iowait"}[5m])) * 100 > 20
+        for: 5m
+        labels:
+          severity: warning
+          component: host-resource
+        annotations:
+          summary: "Host CPU iowait is {{ $value | printf \"%.0f\" }}%"
+          description: >-
+            CPU iowait >20% for >5m — the host is disk-I/O bound. Baseline is
+            under 2%; the 2026-06-30 freeze showed 70%+ iowait alongside the
+            memory commit spike. Triage: ssh oracle ; iostat -x 5 3 ; check
+            for a torrent/transcode/sync burst in the personal media stack.
+
+      - alert: HostIowaitCritical
+        expr: avg by (instance) (rate(node_cpu_seconds_total{job="node", mode="iowait"}[3m])) * 100 > 50
+        for: 3m
+        labels:
+          severity: critical
+          component: host-resource
+        annotations:
+          summary: "Host CPU iowait is {{ $value | printf \"%.0f\" }}% — freeze risk"
+          description: >-
+            CPU iowait >50% for >3m, combined with memory pressure this is
+            exactly the 2026-06-30 pre-freeze signature. Act now: ssh oracle ;
+            docker stats --no-stream ; iostat -x 5 3.

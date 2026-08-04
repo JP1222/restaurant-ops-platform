@@ -1,0 +1,10 @@
+# node-exporter textfile collector drop zone. Host cron jobs (e.g.
+# scripts/backup-postgres.sh) write *.prom here; node-exporter reads it
+# read-only via the bind mount in docker-compose.observability.yml.
+#
+# The directory itself is committed (via this file) so the bind mount has a
+# user-owned target after a fresh clone — otherwise Docker creates it root-owned
+# and the non-root cron user can't write. The metric files are runtime state.
+*.prom
+*.tmp
+!.gitignore

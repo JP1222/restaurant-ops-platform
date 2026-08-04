@@ -1,0 +1,16 @@
+.git
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules
+node_modules*
+dist
+coverage
+.turbo
+.cache
+.vite
+.vite-temp
+tmp
+exports
+*.log

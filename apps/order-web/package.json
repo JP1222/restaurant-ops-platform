@@ -1,0 +1,35 @@
+{
+  "name": "@rop/order-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "YR_SRC=1 next dev -p 3004",
+    "build": "next build",
+    "start": "next start -p 3004",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@sentry/nextjs": "^10.68.0",
+    "@rop/contracts": "workspace:*",
+    "framer-motion": "^12.42.2",
+    "next": "16.2.12",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^26",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.12",
+    "tailwindcss": "^4",
+    "typescript": "^6",
+    "vitest": "^4.1.10"
+  }
+}

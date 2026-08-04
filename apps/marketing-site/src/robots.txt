@@ -1,0 +1,5 @@
+# EXAMPLE KITCHEN marketing site — allow everything, point crawlers at the sitemap.
+User-agent: *
+Allow: /
+
+Sitemap: https://www.example.com/sitemap.xml
