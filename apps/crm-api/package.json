@@ -21,7 +21,7 @@
     "@sentry/node": "^10.68.0",
     "@rop/contracts": "workspace:*",
     "@rop/db-crm": "workspace:*",
-    "bullmq": "^5.81.2",
+    "bullmq": "^6.0.3",
     "fastify": "^5.10.0",
     "ioredis": "^5.11.1",
     "zod": "^4.4.3"
