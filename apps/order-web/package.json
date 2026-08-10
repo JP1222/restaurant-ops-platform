@@ -14,7 +14,7 @@
   "dependencies": {
     "@sentry/nextjs": "^10.68.0",
     "@rop/contracts": "workspace:*",
-    "framer-motion": "^12.42.2",
+    "framer-motion": "^13.0.0",
     "next": "16.2.12",
     "react": "19.2.7",
     "react-dom": "19.2.7",
