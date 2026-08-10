@@ -56,7 +56,7 @@
     "react": ">=19"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "next": "^16.2.12",
     "react": "^19.2.7",
