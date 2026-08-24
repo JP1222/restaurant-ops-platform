@@ -11,11 +11,11 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@sentry/nextjs": "^10.68.0",
+    "@sentry/nextjs": "^10.70.0",
     "@rop/contracts": "workspace:^",
-    "barcode-detector": "^3.2.1",
+    "barcode-detector": "^3.2.2",
     "next": "16.2.12",
-    "pdfjs-dist": "^6.1.200",
+    "pdfjs-dist": "^6.2.108",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
@@ -25,7 +25,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.2",
     "tailwindcss": "^4",
     "typescript": "^6"
   }
