@@ -12,14 +12,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@sentry/nextjs": "^10.68.0",
+    "@sentry/nextjs": "^10.71.0",
     "@rop/contracts": "workspace:*",
     "framer-motion": "^12.42.2",
     "next": "16.2.12",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "zod": "^4.4.3",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -27,9 +27,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
     "typescript": "^6",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
