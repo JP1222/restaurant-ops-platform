@@ -18,16 +18,16 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
-    "@sentry/node": "^10.68.0",
+    "@sentry/node": "^10.73.0",
     "@rop/contracts": "workspace:*",
     "@rop/db-crm": "workspace:*",
     "bullmq": "^5.81.2",
     "fastify": "^5.10.0",
     "ioredis": "^5.11.1",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "pino-pretty": "^13.1.2",
-    "tsx": "^4.23.1"
+    "tsx": "^4.23.13"
   }
 }
