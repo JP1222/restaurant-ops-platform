@@ -13,7 +13,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@sentry/nextjs": "^10.68.0",
+    "@sentry/nextjs": "^10.74.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@rop/auth": "workspace:*",
     "@rop/contracts": "workspace:*",
@@ -22,7 +22,7 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.5.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.2"
   }
