@@ -16,7 +16,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1095.0",
+    "@aws-sdk/client-s3": "^3.1156.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",
     "@sentry/node": "^10.68.0",
@@ -24,10 +24,10 @@
     "@rop/contracts": "workspace:*",
     "@rop/db-inventory": "workspace:*",
     "fastify": "^5.10.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "pino-pretty": "^13.1.2",
-    "tsx": "^4.23.1"
+    "pino-pretty": "^13.2.0",
+    "tsx": "^4.23.15"
   }
 }
